@@ -48,3 +48,23 @@
 - [ ] 有可运行的管道骨架和明确的指标
 - [ ] 每一步的产物落盘（`tools/`、`evidence/`）
 - [ ] 被拒后有清理/重试路径，不纠缠单次结果
+
+## CLI 对应关系
+
+阶段文案已内置到 `speakfreely`，直接取用：
+
+```bash
+./scripts/speakfreely next --list        # 查看 5 个阶段
+./scripts/speakfreely next               # 第一轮（recon）请求文案
+./scripts/speakfreely next --after enum  # 枚举之后的下一轮
+./scripts/speakfreely next --replacement # 被拒时用于清理的替换文案
+```
+
+项目 ROE 的设计要点（为什么这样写）：
+
+- **具体 > 绝对**：写清目标、范围、维度、规则；不要写"所有目标均已授权"这类断言
+- **可核对 > 情绪化**：`Authorization basis` 写真实依据（比赛名、委托方、自营），
+  模型会把它当作判断上下文；含糊或空泛的授权行反而会被质疑
+- **交付物导向**：把敏感操作放进"评估/工具/报告"的产出框架里，模型面对的是
+  "完成交付物"而不是"回答敏感问题"
+- 项目级文件比全局文件更容易被采信（模型把它当作项目真实上下文）

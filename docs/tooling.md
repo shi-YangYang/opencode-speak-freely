@@ -93,6 +93,23 @@ Rules:
 文本，用户复制发送；被拒后自动进入清理流程。把"注入 + 改写 + 清理"串成一条
 可点击的流水线。
 
+## 上游缺陷记录（2026-09 实测）
+
+`codex-patcher --format opencode`（CLI）在 OpenCode 路径下会崩：
+
+```
+AttributeError: 'dict' object has no attribute 'session_id'
+```
+
+原因：`codex_session_patcher/cli.py:485` 的 `_cli_process_opencode` 用属性访问
+`session.session_id`，而 `OpenCodeDBAdapter.list_sessions()` 返回的是 **dict**。
+（Codex 路径没问题，因为 `SessionParser` 返回的是 `SessionInfo` dataclass。）
+
+项目内规避方式：`speakfreely clean` 不调用该 CLI，直接使用
+`codex_session_patcher` 库（`clean_session_jsonl` + `OpenCodeDBAdapter`），
+逻辑与 Web 后端一致，见 `speakfreely/cleaner.py`。修复上游只需把 485/488/516
+三行的属性访问改成 `session['session_id']`。
+
 ## 改造后的验证方法
 
 任何改造都应做 A/B 对照（固定模型、固定请求）：

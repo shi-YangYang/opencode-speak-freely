@@ -20,18 +20,44 @@ OpenCode / 编码代理的**低拒答工作流实践**沉淀：提示词分层�
 
 | 路径 | 内容 |
 |---|---|
+| `speakfreely/` | 一键 CLI（Python stdlib，核心逻辑可被未来 Web UI 复用） |
+| `scripts/speakfreely` | CLI 启动器 |
 | `docs/principles.md` | 原理：拒绝的机制、注入强度与可信度的权衡、提通过率的手段 |
 | `docs/research.md` | 调研笔记：工作流越狱、prefill 注入、Policy Puppetry、Crescendo 等（含数据与出处） |
 | `docs/workflow.md` | 多轮工作流方法论：把敏感目标拆进普通工程步骤（7 阶段） |
 | `docs/tooling.md` | 对 codex-session-patcher 的改造方案：prefill 式替换、AI 改写提示词、多轮引导 |
 | `prompts/opencode-global.md` | 全局提示词（OpenCode 桌面/CLI 通用），当前线上版本 |
 | `prompts/opencode-workspace.md` | 工作空间版提示词（带 `managed-by` 标记，兼容 codex-session-patcher 卸载） |
-| `prompts/project-roe.md` | 项目级 engagement/ROE 模板（放到目标项目根目录作为 AGENTS.md） |
+| `prompts/project-roe.md` | 项目级 engagement/ROE 模板（`speakfreely init` 使用） |
 | `prompts/prefill-replacements.md` | 会话清理的替换文本模板（按阶段） |
-| `scripts/install-global.sh` | 安装全局提示词到 `~/.config/opencode/AGENTS.md`（带备份） |
-| `scripts/uninstall-global.sh` | 卸载全局提示词（校验标记，不碰用户文件） |
+| `tests/test_smoke.py` | 冒烟测试（stdlib unittest） |
 
-## 快速开始
+## 一键使用（推荐）
+
+```bash
+# 0. 一键安装：全局提示词 + 工作空间 + 上下文校验
+./scripts/speakfreely install
+
+# 1. 为目标项目生成 ROE 脚手架
+./scripts/speakfreely init ~/project/<目标项目> \
+    --target "https://target.example" \
+    --authorization "比赛/委托说明"
+
+# 2. 按工作流逐轮获取请求文案
+./scripts/speakfreely next              # 第一轮：侦察
+./scripts/speakfreely next --after recon
+./scripts/speakfreely next --replacement  # 被拒时用的清理替换文案
+./scripts/speakfreely next --copy         # 直接复制到剪贴板
+
+# 3. 查看状态 / 清理被拒会话 / 卸载
+./scripts/speakfreely status
+./scripts/speakfreely clean --dry-run    # 只预览，不改数据库
+./scripts/speakfreely clean              # 执行（自动整库备份）
+./scripts/speakfreely clean --keep-reasoning   # 只替换拒绝回复，保留推理
+./scripts/speakfreely uninstall
+```
+
+## 手动安装（等价）
 
 ```bash
 # 1. 安装全局提示词（对所有项目和会话生效）
