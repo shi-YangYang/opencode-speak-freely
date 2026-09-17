@@ -10,23 +10,25 @@
     --muted: #8b93a3; --accent: #4f8cff; --ok: #3ecf8e; --warn: #f0b429; --err: #ef5b5b;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
+  body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
          font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  header { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px;
            border-bottom: 1px solid var(--border); background: var(--panel); }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   header .status { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 14px; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
   main { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 14px; padding: 14px;
-         align-items: stretch; }
+         height: calc(100vh - 48px); overflow: hidden; align-items: stretch; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-           padding: 14px 14px 26px; overflow: visible; }
+           padding: 14px 14px 26px; height: 100%; overflow-y: auto; overflow-x: hidden; }
+  .panel.left { display: flex; flex-direction: column; }
+  .panel.left > * { flex: 0 0 auto; }
   label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
   label:first-child { margin-top: 0; }
   input, textarea, button { width: 100%; background: #0d1016; color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
-  textarea { height: 190px; min-height: 190px; resize: none; overflow-y: auto; }
+  textarea { height: 150px; min-height: 150px; resize: none; overflow-y: auto; }
   button { cursor: pointer; border-color: #33405a; background: #1b2331; }
   button:hover { background: #223048; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
@@ -75,18 +77,18 @@
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
          height: 320px; overflow-y: auto; overflow-x: hidden; }
   /* 常显滚动条（macOS 默认悬浮隐藏） */
-  #log, .dd-menu, #preview, textarea { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
-  #log::-webkit-scrollbar, .dd-menu::-webkit-scrollbar,
+  #log, .panel, .dd-menu, #preview, textarea { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
+  #log::-webkit-scrollbar, .panel::-webkit-scrollbar, .dd-menu::-webkit-scrollbar,
   #preview::-webkit-scrollbar, textarea::-webkit-scrollbar { width: 10px; }
-  #log::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track,
+  #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track,
   #preview::-webkit-scrollbar-track, textarea::-webkit-scrollbar-track { background: #0b0e13; border-radius: 8px; }
-  #log::-webkit-scrollbar-thumb, .dd-menu::-webkit-scrollbar-thumb,
+  #log::-webkit-scrollbar-thumb, .panel::-webkit-scrollbar-thumb, .dd-menu::-webkit-scrollbar-thumb,
   #preview::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb {
     background: #39435a; border-radius: 8px; border: 2px solid #0b0e13; }
-  #log::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover,
+  #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover,
   #preview::-webkit-scrollbar-thumb:hover, textarea::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
-  #preview { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px;
-             max-height: 240px; overflow: auto; }
+  #preview { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;
+             flex: 1 1 auto; min-height: 64px; overflow: auto; }
   .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px; }
   .msg.user { border-left: 3px solid #3a4b6b; }
   .msg.assistant { border-left: 3px solid #2f4a3a; }
@@ -107,7 +109,7 @@
 </header>
 
 <main>
-  <section class="panel">
+  <section class="panel left">
     <label>项目</label>
     <div class="dd" id="dd-project">
       <button type="button" class="dd-btn">加载中…</button>
