@@ -18,13 +18,13 @@
   header .status { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 14px; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
-  main { display: grid; grid-template-columns: 380px 1fr; gap: 14px; padding: 14px; height: calc(100vh - 47px); }
+  main { display: grid; grid-template-columns: 400px 1fr; gap: 14px; padding: 14px; height: calc(100vh - 47px); }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; overflow: auto; }
   label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
   label:first-child { margin-top: 0; }
-  select, input, textarea, button { width: 100%; background: #0d1016; color: var(--text);
+  input, textarea, button { width: 100%; background: #0d1016; color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
-  textarea { min-height: 110px; resize: vertical; }
+  textarea { min-height: 96px; resize: vertical; }
   button { cursor: pointer; border-color: #33405a; background: #1b2331; }
   button:hover { background: #223048; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
@@ -32,14 +32,31 @@
   button.danger { border-color: #5a3333; background: #2a1a1a; }
   .row { display: flex; gap: 8px; margin-top: 12px; }
   .row > * { flex: 1; }
-  .checks { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; color: var(--muted); font-size: 13px; }
-  .checks label { margin: 0; display: flex; align-items: center; gap: 5px; color: var(--text); }
-  .checks input { width: auto; }
   .muted { color: var(--muted); font-size: 12px; }
+
+  /* 自定义下拉：菜单固定出现在控件正下方 */
+  .dd { position: relative; }
+  .dd-btn { text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .dd-btn::after { content: "▾"; color: var(--muted); font-size: 11px; }
+  .dd-input { width: 100%; }
+  .dd-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+             background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
+             max-height: 300px; overflow: auto; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .dd-item { padding: 7px 10px; cursor: pointer; font-size: 13px; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  .dd-item:hover, .dd-item.active { background: #1b2331; }
+  .dd-item .sub { color: var(--muted); font-size: 11px; margin-left: 6px; }
+  .dd-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
+
+  .checks { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 13px; }
+  .checks label { margin: 0; display: flex; align-items: center; gap: 5px; color: var(--text); cursor: help; }
+  .checks input { width: auto; }
+  .checks .en { color: var(--muted); font-size: 11px; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-         height: 300px; overflow: auto; }
-  #preview { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; max-height: 260px; overflow: auto; }
+         height: 320px; overflow: auto; }
+  #preview { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px;
+             max-height: 240px; overflow: auto; }
   .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px; }
   .msg.user { border-left: 3px solid #3a4b6b; }
   .msg.assistant { border-left: 3px solid #2f4a3a; }
@@ -62,32 +79,34 @@
 <main>
   <section class="panel">
     <label>项目</label>
-    <select id="project"></select>
+    <div class="dd" id="dd-project">
+      <button type="button" class="dd-btn">加载中…</button>
+      <div class="dd-menu" hidden></div>
+    </div>
 
     <label>会话</label>
-    <select id="session"></select>
-    <div id="preview" class="muted">选择会话后显示最近消息</div>
+    <div class="dd" id="dd-session">
+      <button type="button" class="dd-btn">新建会话（自动全流程）</button>
+      <div class="dd-menu" hidden></div>
+    </div>
+    <div id="preview" class="muted" style="margin-top:8px">选择会话后显示最近消息</div>
 
     <label>模型</label>
-    <input id="model" list="model-list" placeholder="默认（留空即用 OpenCode 配置）" />
-    <datalist id="model-list"></datalist>
+    <div class="dd filterable" id="dd-model">
+      <input class="dd-input" placeholder="默认（点击选择，可输入过滤）" autocomplete="off" />
+      <div class="dd-menu" hidden></div>
+    </div>
 
     <label>目标 / 消息</label>
     <textarea id="goal" placeholder="一句话说明你要做什么。新会话：写进半成品文件后自动跑全流程；已有会话：直接作为消息发送。"></textarea>
 
-    <label>阶段（新会话模式）</label>
-    <div class="checks" id="stages">
-      <label><input type="checkbox" value="recon" checked>recon</label>
-      <label><input type="checkbox" value="enum" checked>enum</label>
-      <label><input type="checkbox" value="analyze" checked>analyze</label>
-      <label><input type="checkbox" value="exploit" checked>exploit</label>
-      <label><input type="checkbox" value="evidence" checked>evidence</label>
-    </div>
+    <label>阶段（新会话模式，鼠标悬浮看说明）</label>
+    <div class="checks" id="stages"></div>
 
     <div class="row">
       <label style="margin:0">预热示例 <input id="prime" type="number" value="0" min="0" max="4" /></label>
       <label style="margin:0">替换文案
-        <select id="prefill">
+        <select id="prefill" style="width:100%;background:#0d1016;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">
           <option value="">默认</option>
           <option value="template">模板</option>
           <option value="auto">LLM 生成</option>
@@ -95,7 +114,7 @@
       </label>
     </div>
     <div class="checks" style="margin-top:10px">
-      <label><input type="checkbox" id="dry-run"> 只预览计划</label>
+      <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
     </div>
 
     <div class="row">
@@ -113,13 +132,13 @@
 
   <section class="panel">
     <label>运行日志</label>
-    <div id="log">就绪。选择项目与会话（或默认新建），输入目标，点“运行”。</div>
+    <div id="log">就绪。选项目 → 选会话（或新建）→ 选模型 → 输入目标 → 运行。</div>
   </section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { projects: [], sessions: [], job: null, timer: null, watching: [] };
+const state = { watching: [], timer: null };
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -132,7 +151,95 @@ function log(text) {
   el.textContent += "\n" + text;
   el.scrollTop = el.scrollHeight;
 }
+function esc(text) {
+  return String(text).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+}
 
+/* ── 自定义下拉组件：菜单固定显示在控件正下方 ─────────────────────────── */
+function Dropdown(rootId, { placeholder, filterable, onChange }) {
+  const root = $(rootId);
+  const trigger = root.querySelector(filterable ? ".dd-input" : ".dd-btn");
+  const menu = root.querySelector(".dd-menu");
+  let items = [];
+  let value = "";
+  let label = placeholder || "";
+
+  function paint() {
+    if (!filterable) trigger.textContent = label || placeholder || "请选择";
+    else trigger.placeholder = label || placeholder || "";
+  }
+  function render(filter) {
+    const needle = (filter || "").toLowerCase();
+    const shown = items.filter((item) => !needle || item.value.toLowerCase().includes(needle) || (item.label || "").toLowerCase().includes(needle));
+    if (!shown.length) {
+      menu.innerHTML = `<div class="dd-empty">没有匹配项</div>`;
+      return;
+    }
+    menu.innerHTML = shown.map((item) =>
+      `<div class="dd-item${item.value === value ? " active" : ""}" data-value="${esc(item.value)}">
+         ${esc(item.label || item.value)}${item.sub ? `<span class="sub">${esc(item.sub)}</span>` : ""}
+       </div>`).join("");
+    menu.querySelectorAll(".dd-item").forEach((node) => {
+      node.addEventListener("click", () => {
+        select(node.dataset.value);
+        close();
+      });
+    });
+  }
+  function open() {
+    menu.hidden = false;
+    render(filterable ? trigger.value : "");
+  }
+  function close() { menu.hidden = true; }
+  function select(next) {
+    const item = items.find((entry) => entry.value === next);
+    value = next;
+    label = item ? (item.label || item.value) : next;
+    if (filterable) trigger.value = value === next && item ? item.value : trigger.value;
+    paint();
+    if (onChange) onChange(value);
+  }
+  function setItems(next, keepValue) {
+    items = next || [];
+    if (!keepValue) { value = ""; label = placeholder || ""; if (filterable) trigger.value = ""; }
+    paint();
+  }
+  function setValue(next) { select(next); }
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    menu.hidden ? open() : close();
+  });
+  if (filterable) {
+    trigger.addEventListener("focus", open);
+    trigger.addEventListener("input", () => { canvasFilter(); open(); });
+  }
+  function canvasFilter() {
+    // 输入过滤时，值以输入框内容为准（允许自由输入任意模型名）
+    value = trigger.value;
+    if (onChange) onChange(value);
+  }
+  document.addEventListener("click", (event) => {
+    if (!root.contains(event.target)) close();
+  });
+  paint();
+  return { setItems, setValue, getValue: () => (filterable ? trigger.value : value), close };
+}
+
+const projectDD = Dropdown("dd-project", {
+  placeholder: "请选择项目",
+  onChange: () => loadSessions(),
+});
+const sessionDD = Dropdown("dd-session", {
+  placeholder: "新建会话（自动全流程）",
+  onChange: () => { updateRunButton(); loadPreview(); },
+});
+const modelDD = Dropdown("dd-model", {
+  placeholder: "默认（点击选择，可输入过滤）",
+  filterable: true,
+});
+
+/* ── 数据加载 ─────────────────────────────────────────────────────────── */
 async function loadStatus() {
   try {
     const s = await api("/api/status");
@@ -144,67 +251,88 @@ async function loadStatus() {
 }
 
 async function loadProjects() {
-  state.projects = await api("/api/projects");
-  $("project").innerHTML = state.projects.map((p) =>
-    `<option value="${p.directory}">${p.directory}（${p.sessions}）</option>`).join("");
-  if (state.projects.length) await loadSessions();
+  const projects = await api("/api/projects");
+  projectDD.setItems(projects.map((p) => ({
+    value: p.directory,
+    label: p.directory,
+    sub: `${p.sessions} 个会话`,
+  })));
+  if (projects.length) projectDD.setValue(projects[0].directory);
 }
 
 async function loadSessions() {
-  const project = $("project").value;
+  const project = projectDD.getValue();
   if (!project) return;
-  state.sessions = await api("/api/sessions?project=" + encodeURIComponent(project));
-  $("session").innerHTML = `<option value="">➕ 新建会话（vibe 全流程）</option>` +
-    state.sessions.map((s) => `<option value="${s.id}">${s.updated} · ${s.title}</option>`).join("");
+  const sessions = await api("/api/sessions?project=" + encodeURIComponent(project));
+  sessionDD.setItems([
+    { value: "", label: "新建会话（自动全流程）" },
+    ...sessions.map((s) => ({ value: s.id, label: s.title, sub: s.updated })),
+  ]);
+  sessionDD.setValue("");
   $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。";
   updateWatchButton();
 }
 
 async function loadModels() {
-  const models = await api("/api/models");
-  $("model-list").innerHTML = models.map((m) => `<option value="${m}">`).join("");
+  try {
+    const models = await api("/api/models");
+    modelDD.setItems(models.map((m) => ({ value: m, label: m })));
+  } catch (e) { log("模型列表获取失败: " + e.message); }
+}
+
+async function loadStages() {
+  const stages = await api("/api/stages");
+  $("stages").innerHTML = stages.map((s, index) =>
+    `<label title="${esc(s.description)}">
+       <input type="checkbox" value="${esc(s.key)}" ${index < 5 ? "checked" : ""}>
+       ${esc(s.name)} <span class="en">${esc(s.key)}</span>
+     </label>`).join("");
 }
 
 let previewToken = 0;
 async function loadPreview() {
-  const id = $("session").value;
+  const id = sessionDD.getValue();
   if (!id) { $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。"; return; }
   const token = ++previewToken;
   $("preview").textContent = "加载中…";
   const data = await api("/api/session?id=" + encodeURIComponent(id));
   if (token !== previewToken) return;
   const badge = data.refusals ? `<span class="badge">${data.refusals} 处拒绝</span>` : "";
-  const html = data.messages.map((m) =>
-    `<div class="msg ${m.refusal ? "refusal" : m.role}">
-       <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}</div>
-       <div>${m.text.replace(/[<>&]/g, (c) => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>
-     </div>`).join("");
-  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.total} 条消息${badge}</div>` + html;
+  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.total} 条消息${badge}</div>` +
+    data.messages.map((m) =>
+      `<div class="msg ${m.refusal ? "refusal" : m.role}">
+         <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}</div>
+         <div>${esc(m.text)}</div>
+       </div>`).join("");
 }
 
+function updateRunButton() {
+  $("btn-run").textContent = sessionDD.getValue() ? "▶ 发送到该会话" : "▶ 运行全流程";
+}
 function selectedStages() {
   return Array.from(document.querySelectorAll("#stages input:checked")).map((i) => i.value);
 }
+
+/* ── 动作 ─────────────────────────────────────────────────────────────── */
 async function run(dryRun) {
   const goal = $("goal").value.trim();
   if (!goal) { log("请先输入目标"); return; }
-  const session = $("session").value;
+  const session = sessionDD.getValue();
   const payload = {
     mode: session ? "send" : "vibe",
-    project: $("project").value,
+    project: projectDD.getValue(),
     session: session || null,
-    model: $("model").value.trim(),
+    model: modelDD.getValue().trim(),
     goal: goal,
     stages: session ? null : (selectedStages().join(",") || null),
     prime: parseInt($("prime").value || "0", 10),
     prefill: $("prefill").value || null,
     dry_run: !!dryRun,
   };
+  log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);
   const { job } = await api("/api/run", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
-  state.job = job;
-  log(`\n=== 任务 ${job}（${payload.mode}${session ? " · 会话 " + session.slice(0, 16) : ""}）===`);
   pollJob(job);
 }
 function pollJob(id) {
@@ -212,38 +340,40 @@ function pollJob(id) {
   state.timer = setInterval(async () => {
     const job = await api("/api/job?id=" + id);
     const el = $("log");
-    const prefix = `=== 任务 ${id} ===\n`;
-    el.textContent = prefix + job.log.join("\n");
+    el.textContent = `=== 任务 ${id} ===\n` + job.log.join("\n");
     el.scrollTop = el.scrollHeight;
     if (job.status !== "running") {
       clearInterval(state.timer);
       if (job.status === "error") log("失败: " + (job.result?.error || ""));
       else if (job.result?.ok === false) log("未完成: " + (job.result?.reason || ""));
+      else log("完成");
     }
   }, 1000);
 }
 
-async function cleanSession(dryRun) {
-  const session = $("session").value;
+async function cleanSession() {
+  const session = sessionDD.getValue();
   if (!session) { log("请先选择要清理的会话"); return; }
   const result = await api("/api/clean", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session, dry_run: dryRun }),
+    body: JSON.stringify({ session, dry_run: false }),
   });
   const entry = (result.sessions || [])[0] || {};
   log(`\n=== 清理 ${session} ===`);
-  log(entry.error ? "失败: " + entry.error : `修改: ${entry.modified ? entry.changes.join("; ") : "无需修改"}${entry.backup ? " | 备份: " + entry.backup : ""}`);
+  log(entry.error ? "失败: " + entry.error
+    : `修改: ${entry.modified ? entry.changes.join("; ") : "无需修改"}${entry.backup ? " | 备份: " + entry.backup : ""}`);
   loadPreview();
 }
 
 function updateWatchButton() {
-  const project = $("project").value;
+  const project = projectDD.getValue();
   const on = state.watching.includes(project);
   $("btn-watch").textContent = on ? "停止 watch" : "开启 watch";
   $("btn-watch").classList.toggle("primary", on);
 }
 async function toggleWatch() {
-  const project = $("project").value;
+  const project = projectDD.getValue();
+  if (!project) { log("请先选择项目"); return; }
   const action = state.watching.includes(project) ? "stop" : "start";
   const res = await api("/api/watch", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -254,18 +384,18 @@ async function toggleWatch() {
   setTimeout(loadStatus, 1200);
 }
 
-$("project").addEventListener("change", loadSessions);
-$("session").addEventListener("change", loadPreview);
 $("btn-run").addEventListener("click", () => run(false));
 $("btn-dry").addEventListener("click", () => run(true));
-$("btn-clean").addEventListener("click", () => cleanSession(false));
-$("btn-refresh").addEventListener("click", async () => { await loadStatus(); await loadProjects(); log("已刷新"); });
+$("btn-clean").addEventListener("click", cleanSession);
 $("btn-watch").addEventListener("click", toggleWatch);
+$("btn-refresh").addEventListener("click", async () => { await loadStatus(); await loadProjects(); await loadModels(); log("已刷新"); });
 
 (async function init() {
   await loadStatus();
+  await loadStages();
   await loadProjects();
   await loadModels();
+  updateRunButton();
   setInterval(loadStatus, 15000);
 })();
 </script>

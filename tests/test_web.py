@@ -72,6 +72,43 @@ class WebCase(unittest.TestCase):
         raise AssertionError("job 未在超时内完成")
 
 
+class TestModelsFallback(unittest.TestCase):
+    """CLI 拿不到时回退到配置文件解析。"""
+
+    def setUp(self):
+        self.temp = tempfile.mkdtemp(prefix="speakfreely-models-")
+        self.config = os.path.join(self.temp, "opencode.jsonc")
+        with open(self.config, "w", encoding="utf-8") as stream:
+            stream.write(
+                """
+                {
+                  "provider": {
+                    "tokenrhythm": {
+                      "options": { "baseURL": "https://example.test/v1" },
+                      "models": { "glm-5.2": {}, "kimi-k2.6": {} },
+                    }
+                  }
+                }
+                """
+            )
+
+    def tearDown(self):
+        web._MODELS_CACHE["models"] = []
+        web._MODELS_CACHE["time"] = 0.0
+        shutil.rmtree(self.temp, ignore_errors=True)
+
+    def test_fallback_to_config(self):
+        web._MODELS_CACHE["models"] = []
+        original = web._models_from_cli
+        web._models_from_cli = lambda: []
+        try:
+            models = web.list_models(path=self.config)
+        finally:
+            web._models_from_cli = original
+        self.assertIn("tokenrhythm/glm-5.2", models)
+        self.assertIn("tokenrhythm/kimi-k2.6", models)
+
+
 class TestJsoncParser(unittest.TestCase):
     def test_keeps_urls_comments_and_trailing_commas(self):
         raw = """
@@ -169,6 +206,15 @@ class TestApi(WebCase):
 
         _, status = self.post("/api/watch", {"project": self.project, "action": "stop"})
         self.assertEqual(status["status"], "stopping")
+
+    def test_stages_endpoint(self):
+        _, stages = self.get("/api/stages")
+        self.assertEqual(
+            [stage["key"] for stage in stages],
+            ["recon", "enum", "analyze", "exploit", "evidence"],
+        )
+        self.assertTrue(all(stage["name"] for stage in stages))
+        self.assertTrue(all(stage["description"] for stage in stages))
 
     def test_unknown_api(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 import uuid
@@ -21,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import auto as auto_module
 from . import cleaner as cleaner_module
 from . import installer
+from . import paths
 from . import seed as seed_module
 from . import watch as watch_module
 from .core import DEFAULT_OPENCODE_DB, OpenCodeDBAdapter, OpenCodeFormat, RefusalDetector
@@ -117,7 +119,49 @@ def list_sessions(project: str, db_path: Optional[str] = None) -> List[Dict[str,
     ]
 
 
+_MODELS_CACHE: Dict[str, Any] = {"time": 0.0, "models": []}
+_MODELS_TTL = 60.0
+
+
 def list_models(path: Optional[str] = None) -> List[str]:
+    """优先用 `opencode models`（含内置 opencode-go），失败回退配置文件。"""
+    now = time.time()
+    if _MODELS_CACHE["models"] and now - _MODELS_CACHE["time"] < _MODELS_TTL:
+        return list(_MODELS_CACHE["models"])
+
+    models = _models_from_cli()
+    if not models:
+        models = _models_from_config(path)
+
+    if models:
+        _MODELS_CACHE["time"] = now
+        _MODELS_CACHE["models"] = list(models)
+    return models
+
+
+def _models_from_cli() -> List[str]:
+    binary = paths.find_command("opencode")
+    if not binary:
+        return []
+    try:
+        completed = subprocess.run(
+            [binary, "models"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    models = set()
+    for line in (completed.stdout or "").splitlines():
+        line = line.strip()
+        if "/" in line and " " not in line:
+            models.add(line)
+    return sorted(models)
+
+
+def _models_from_config(path: Optional[str] = None) -> List[str]:
     candidates = [
         path,
         os.path.expanduser("~/.config/opencode/opencode.jsonc"),
@@ -141,6 +185,19 @@ def list_models(path: Optional[str] = None) -> List[str]:
         if models:
             return sorted(set(models))
     return []
+
+
+def list_stages() -> List[Dict[str, str]]:
+    from . import workflow
+
+    return [
+        {
+            "key": stage["key"],
+            "name": stage.get("name", stage["key"]),
+            "description": stage.get("description", ""),
+        }
+        for stage in workflow.STAGES
+    ]
 
 
 def _parse_jsonc(raw: str) -> Optional[Any]:
@@ -409,6 +466,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(list_sessions(project, self.db_path))
             if parsed.path == "/api/models":
                 return self._json(list_models())
+            if parsed.path == "/api/stages":
+                return self._json(list_stages())
             if parsed.path == "/api/session":
                 session_id = (query.get("id") or [""])[0]
                 if not session_id:
