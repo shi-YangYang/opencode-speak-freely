@@ -42,8 +42,11 @@
   .dd-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
              background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
              max-height: 300px; overflow: auto; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
-  .dd-item { padding: 7px 10px; cursor: pointer; font-size: 13px; white-space: nowrap;
-             overflow: hidden; text-overflow: ellipsis; }
+  .dd-item { padding: 7px 10px; cursor: pointer; font-size: 13px; display: flex;
+             align-items: baseline; gap: 8px; }
+  .dd-item .item-main { flex: 1 1 auto; min-width: 0; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .dd-item .item-sub { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
   .dd-item:hover, .dd-item.active { background: #1b2331; }
   .dd-item .sub { color: var(--muted); font-size: 11px; margin-left: 6px; }
   .dd-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
@@ -52,6 +55,15 @@
   .checks label { margin: 0; display: flex; align-items: center; gap: 5px; color: var(--text); cursor: help; }
   .checks input { width: auto; }
   .checks .en { color: var(--muted); font-size: 11px; }
+
+  /* 即时自定义 tooltip（原生 title 有延迟且表现不一致） */
+  .tip { position: relative; }
+  .tip .tip-text { display: none; position: absolute; left: 0; bottom: calc(100% + 6px);
+    z-index: 300; pointer-events: none; width: max-content; max-width: 340px;
+    background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.5);
+    color: var(--text); font-size: 12px; line-height: 1.55; white-space: normal; }
+  .tip:hover .tip-text { display: block; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
          height: 320px; overflow: auto; }
@@ -152,7 +164,8 @@ function log(text) {
   el.scrollTop = el.scrollHeight;
 }
 function esc(text) {
-  return String(text).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  return String(text).replace(/[<>&"']/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 /* ── 自定义下拉组件：菜单固定显示在控件正下方 ─────────────────────────── */
@@ -175,10 +188,15 @@ function Dropdown(rootId, { placeholder, filterable, onChange }) {
       menu.innerHTML = `<div class="dd-empty">没有匹配项</div>`;
       return;
     }
-    menu.innerHTML = shown.map((item) =>
-      `<div class="dd-item${item.value === value ? " active" : ""}" data-value="${esc(item.value)}">
-         ${esc(item.label || item.value)}${item.sub ? `<span class="sub">${esc(item.sub)}</span>` : ""}
-       </div>`).join("");
+    menu.innerHTML = shown.map((item) => {
+      const main = esc(item.label || item.value);
+      const sub = item.sub ? esc(item.sub) : "";
+      const full = sub ? `${main} · ${sub}` : main;
+      return `<div class="dd-item${item.value === value ? " active" : ""}"
+                   data-value="${esc(item.value)}" title="${full}">
+                <span class="item-main">${main}</span>${sub ? `<span class="item-sub">${sub}</span>` : ""}
+              </div>`;
+    }).join("");
     menu.querySelectorAll(".dd-item").forEach((node) => {
       node.addEventListener("click", () => {
         select(node.dataset.value);
@@ -283,9 +301,10 @@ async function loadModels() {
 async function loadStages() {
   const stages = await api("/api/stages");
   $("stages").innerHTML = stages.map((s, index) =>
-    `<label title="${esc(s.description)}">
+    `<label class="tip" title="${esc(s.description)}">
        <input type="checkbox" value="${esc(s.key)}" ${index < 5 ? "checked" : ""}>
        ${esc(s.name)} <span class="en">${esc(s.key)}</span>
+       <span class="tip-text">${esc(s.description)}</span>
      </label>`).join("");
 }
 
