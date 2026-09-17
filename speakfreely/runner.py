@@ -38,7 +38,7 @@ def parse_events(stdout: str) -> Dict[str, Any]:
             if part_id not in texts:
                 order.append(part_id)
             texts[part_id] = part.get("text", "")
-        elif event_type == "tool":
+        elif event_type in ("tool", "tool_use"):
             tool_calls += 1
         elif event_type == "step_finish":
             try:
@@ -86,15 +86,23 @@ def run_open(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        return {
-            "session_id": session,
-            "text": "",
-            "cost": 0.0,
-            "returncode": None,
-            "stderr": "timeout after {}s".format(timeout),
-            "timeout": True,
-            "command": command,
-        }
+        # 超时也要尽量从已产生的输出里恢复 session id / 文本
+        raw = exc.stdout or ""
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        parsed = parse_events(raw)
+        parsed.update(
+            {
+                "text": parsed["text"],
+                "session_id": parsed["session_id"] or session,
+                "cost": parsed["cost"],
+                "returncode": None,
+                "stderr": "timeout after {}s".format(timeout),
+                "timeout": True,
+                "command": command,
+            }
+        )
+        return parsed
 
     parsed = parse_events(completed.stdout)
     parsed.update(

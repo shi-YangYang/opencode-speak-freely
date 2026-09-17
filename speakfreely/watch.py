@@ -29,7 +29,9 @@ def watch(
     """
     adapter = OpenCodeDBAdapter(db_path or DEFAULT_OPENCODE_DB)
     detector = detector or RefusalDetector()
-    project_dir = os.path.abspath(os.path.expanduser(project_dir)) if project_dir else None
+    project_dir = (
+        os.path.realpath(os.path.expanduser(project_dir)) if project_dir else None
+    )
 
     def emit(message: str) -> None:
         if on_event:
@@ -51,7 +53,7 @@ def watch(
 
         for item in sessions:
             session_id = item["session_id"]
-            if project_dir and os.path.abspath(item.get("directory") or "") != project_dir:
+            if project_dir and os.path.realpath(item.get("directory") or "") != project_dir:
                 continue
 
             updated = item.get("mtime") or 0

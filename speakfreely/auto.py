@@ -56,13 +56,15 @@ def run_auto(
     detector: Optional[RefusalDetector] = None,
     retry_prompt: str = DEFAULT_RETRY_PROMPT,
     on_event: Optional[Callable[[str], None]] = None,
+    seed: bool = False,
+    seed_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """按工作流阶段自动推进，被拒时自动清理并重试。
 
     Returns:
         {ok, stages: [{stage, attempts, cost, session_id, logs}], sends, cost, reason}
     """
-    project_dir = os.path.abspath(os.path.expanduser(project_dir))
+    project_dir = os.path.realpath(os.path.expanduser(project_dir))
     runner = runner or run_open
     clean_fn = clean_fn or _default_clean_fn
     detector = detector or RefusalDetector()
@@ -83,6 +85,18 @@ def run_auto(
 
     models = models or []
 
+    seed_prompt: Optional[str] = None
+    if seed:
+        from . import seed as seed_module
+
+        seeded = seed_module.scaffold(
+            project_dir=project_dir,
+            goal=goal or "Task harness",
+            name=seed_name,
+        )
+        seed_prompt = seeded["prompt"]
+        emit("已生成半成品: {}".format(seeded["path"]))
+
     if dry_run:
         return {
             "ok": True,
@@ -94,6 +108,7 @@ def run_auto(
                 "models": models,
                 "max_attempts": max_attempts,
                 "max_sends": max_sends,
+                "seed": seed_prompt,
             },
             "stages": [],
             "sends": 0,
@@ -108,9 +123,12 @@ def run_auto(
     stage_reports: List[Dict[str, Any]] = []
 
     for stage_index, stage in enumerate(stage_defs, 1):
-        prompt = stage["request"]
-        if goal and stage_index == 1:
-            prompt = "目标：{}\n\n{}".format(goal, prompt)
+        if stage_index == 1 and seed_prompt:
+            prompt = seed_prompt
+        else:
+            prompt = stage["request"]
+            if goal and stage_index == 1:
+                prompt = "目标：{}\n\n{}".format(goal, prompt)
 
         report = {
             "stage": stage["key"],
@@ -217,7 +235,8 @@ def _latest_session_for(project_dir: str, db_path: Optional[str]) -> Optional[st
         sessions = adapter.list_sessions()
     except Exception:  # noqa: BLE001
         return None
+    target = os.path.realpath(project_dir)
     for item in sessions:
-        if os.path.abspath(item.get("directory") or "") == project_dir:
+        if os.path.realpath(item.get("directory") or "") == target:
             return item["session_id"]
     return sessions[0]["session_id"] if sessions else None

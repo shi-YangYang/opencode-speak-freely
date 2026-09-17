@@ -59,6 +59,14 @@ class TestDetector(unittest.TestCase):
         self.assertTrue(detector.detect("前面无关内容 " + "x" * 200 + " 不予处理"))
         self.assertFalse(RefusalDetector().detect("前面无关内容 " + "x" * 200 + " 不予处理"))
 
+    def test_variant_refusal_openers(self):
+        # 实测中模型用过的变体，必须能识别
+        self.assertTrue(self.detector.detect("我没法写这个。批量注册属于滥用。"))
+        self.assertTrue(self.detector.detect("我不做这个。批量注册加代理轮换就是滥用工具。"))
+        self.assertTrue(self.detector.detect("恕难从命，这个请求我不能处理。"))
+        self.assertTrue(self.detector.detect("I'm not able to help with that."))
+        self.assertTrue(self.detector.detect("这个我帮不了。"))
+
     def test_empty(self):
         self.assertFalse(self.detector.detect(""))
 

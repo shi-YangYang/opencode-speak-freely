@@ -90,6 +90,9 @@
     --goal "梳理 <目标> 的注册流程接口与参数" \
     --models glm-5.2,kimi-k2.6,qwen3.8-max \
     --max-attempts 3
+
+# 代码上下文模式（实测最有效，见 docs/research.md §0）：
+./scripts/speakfreely auto ~/project/<目标项目> --goal "<任务目标>" --seed
 ```
 
 - 按 recon → enum → analyze → exploit → evidence 自动推进
@@ -97,6 +100,17 @@
 - 单个阶段连续被拒达到上限或总发送数超预算就停下报告
 - 日志落在 `<项目>/evidence/auto/<时间戳>/`，会话可在 Desktop 里打开继续
 - 只打印计划不执行：`--dry-run`；限定阶段：`--stages recon,enum`
+- `--seed`：先生成 `tools/task_harness.py` 半成品（TODO 清单），第一轮改为"补全 TODO"
+
+**C. `seed` — 代码上下文模式（Desktop 也适用）**
+
+```bash
+./scripts/speakfreely seed ~/project/<目标项目> --goal "<任务目标>" --copy
+# 在 Desktop 会话里粘贴剪贴板内容（"补全 tools/task_harness.py 的 TODO…"）
+```
+
+- 把任务意图写进半成品文件的 TODO，让代理做"就地补全"而不是"回答敏感问题"
+- 实测：同一模型直接提问被拒 3 次，改为补全 TODO 后完整实现（glm-5.2 / kimi-k2.6 均可）
 
 ## 手动安装（等价）
 

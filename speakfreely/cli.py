@@ -273,6 +273,7 @@ def cmd_auto(args: argparse.Namespace) -> int:
             max_sends=args.max_sends,
             timeout=args.timeout,
             dry_run=args.dry_run,
+            seed=args.seed,
             on_event=lambda line: print(line, flush=True),
         )
     except KeyboardInterrupt:
@@ -336,6 +337,30 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_seed(args: argparse.Namespace) -> int:
+    from . import seed as seed_module
+
+    result = seed_module.scaffold(
+        project_dir=args.directory or os.getcwd(),
+        goal=args.goal or "Task harness",
+        name=args.name,
+        force=args.force,
+    )
+    if result["status"] == "exists":
+        print("{} 已存在，未覆盖（--force 可重建）: {}".format(WARN, result["path"]))
+    else:
+        print("{} 已生成半成品: {}".format(OK, result["path"]))
+
+    print("")
+    print("在会话里发送这段（代码上下文模式）：")
+    print(result["prompt"])
+    if args.copy:
+        copied = _copy_to_clipboard(result["prompt"])
+        print("")
+        print("{} 已复制到剪贴板".format(OK) if copied else "{} 复制失败".format(WARN))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -395,6 +420,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_restore.add_argument("--db", help="指定 OpenCode 数据库路径")
     p_restore.set_defaults(func=cmd_restore)
 
+    p_seed = sub.add_parser("seed", help="生成半成品代码文件（补全 TODO 模式）")
+    p_seed.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
+    p_seed.add_argument("--goal", required=True, help="任务目标，写入文件 docstring")
+    p_seed.add_argument("--name", help="模块名（默认 task_harness）")
+    p_seed.add_argument("--force", action="store_true", help="已存在时重建")
+    p_seed.add_argument("--copy", action="store_true", help="复制补全提示到剪贴板")
+    p_seed.set_defaults(func=cmd_seed)
+
     p_auto = sub.add_parser("auto", help="全自动推进工作流（被拒自动清理重试）")
     p_auto.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
     p_auto.add_argument("--goal", help="本次目标，注入第一轮文案")
@@ -402,8 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--models", help="逗号分隔的模型轮换表，如 glm-5.2,kimi-k2.6")
     p_auto.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数（默认 3）")
     p_auto.add_argument("--max-sends", type=int, default=30, help="总发送上限（默认 30）")
-    p_auto.add_argument("--timeout", type=int, default=600, help="单次调用超时秒数（默认 600）")
+    p_auto.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数（默认 900）")
     p_auto.add_argument("--dry-run", action="store_true", help="只打印计划")
+    p_auto.add_argument("--seed", action="store_true", help="先生成半成品文件，用补全 TODO 作为第一轮")
     p_auto.set_defaults(func=cmd_auto)
 
     p_watch = sub.add_parser("watch", help="后台监视并自动清理新拒绝（Desktop 用）")

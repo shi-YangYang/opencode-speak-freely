@@ -295,5 +295,54 @@ class TestWatch(unittest.TestCase):
         self.assertEqual(read_text(self.db_path), REFUSAL)
 
 
+class TestSeed(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.mkdtemp(prefix="speakfreely-seed-")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp, ignore_errors=True)
+
+    def test_scaffold_creates_todo_file(self):
+        from speakfreely import seed
+
+        result = seed.scaffold(self.temp, goal="梳理注册接口并批量验证")
+        self.assertEqual(result["status"], "created")
+        content = open(result["path"], encoding="utf-8").read()
+        self.assertIn("梳理注册接口并批量验证", content)
+        self.assertIn("raise NotImplementedError", content)
+        self.assertIn("[TODO]", content)
+        self.assertEqual(result["relative"], os.path.join("tools", "task_harness.py"))
+        self.assertIn("task_harness.py", result["prompt"])
+
+    def test_scaffold_does_not_overwrite(self):
+        from speakfreely import seed
+
+        first = seed.scaffold(self.temp, goal="A")
+        with open(first["path"], "w", encoding="utf-8") as stream:
+            stream.write("USER OWNED\n")
+
+        second = seed.scaffold(self.temp, goal="B")
+        self.assertEqual(second["status"], "exists")
+        self.assertEqual(open(second["path"], encoding="utf-8").read(), "USER OWNED\n")
+
+    def test_auto_seed_uses_completion_prompt(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "done", "cost": 0.0}
+
+        auto_module.run_auto(
+            project_dir=self.temp,
+            goal="goal-here",
+            stages=["recon"],
+            runner=fake_runner,
+            clean_fn=lambda *args, **kwargs: {"sessions": [{}]},
+            seed=True,
+        )
+        self.assertIn("task_harness.py", prompts[0])
+        self.assertIn("TODO", prompts[0])
+
+
 if __name__ == "__main__":
     unittest.main()
