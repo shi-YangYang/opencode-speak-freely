@@ -56,14 +56,11 @@
   .checks input { width: auto; }
   .checks .en { color: var(--muted); font-size: 11px; }
 
-  /* 即时自定义 tooltip（原生 title 有延迟且表现不一致） */
-  .tip { position: relative; }
-  .tip .tip-text { display: none; position: absolute; left: 0; bottom: calc(100% + 6px);
-    z-index: 300; pointer-events: none; width: max-content; max-width: 340px;
+  /* 全局单例 tooltip：挂在 body、position:fixed，不受父容器裁剪/不撑滚动条 */
+  #tooltip { position: fixed; z-index: 9999; pointer-events: none; max-width: 360px;
     background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.5);
-    color: var(--text); font-size: 12px; line-height: 1.55; white-space: normal; }
-  .tip:hover .tip-text { display: block; }
+    color: var(--text); font-size: 12px; line-height: 1.55; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
          height: 320px; overflow: auto; }
@@ -148,6 +145,8 @@
   </section>
 </main>
 
+<div id="tooltip" hidden></div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const state = { watching: [], timer: null };
@@ -167,6 +166,40 @@ function esc(text) {
   return String(text).replace(/[<>&"']/g, (c) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* ── 全局 tooltip：即时显示、body 级、fixed 定位 ─────────────────────── */
+const tooltipEl = () => document.getElementById("tooltip");
+function hideTooltip() {
+  const el = tooltipEl();
+  if (el) el.hidden = true;
+}
+function showTooltip(text, target) {
+  const el = tooltipEl();
+  if (!el || !text) return;
+  el.textContent = text;
+  el.hidden = false;
+  const rect = target.getBoundingClientRect();
+  const tip = el.getBoundingClientRect();
+  let top = rect.top - tip.height - 6;
+  if (top < 4) top = rect.bottom + 6;                       // 上方放不下就放下方
+  if (top + tip.height > window.innerHeight - 4) {
+    top = Math.max(4, window.innerHeight - tip.height - 4);
+  }
+  let left = Math.max(4, Math.min(rect.left, window.innerWidth - tip.width - 8));
+  el.style.top = top + "px";
+  el.style.left = left + "px";
+}
+function bindTooltips(root) {
+  (root || document).querySelectorAll("[data-tip]").forEach((node) => {
+    if (node.dataset.tipBound) return;
+    node.dataset.tipBound = "1";
+    node.addEventListener("mouseenter", () => showTooltip(node.dataset.tip, node));
+    node.addEventListener("mouseleave", hideTooltip);
+    node.addEventListener("click", hideTooltip);
+  });
+}
+document.addEventListener("scroll", hideTooltip, true);
+window.addEventListener("resize", hideTooltip);
 
 /* ── 自定义下拉组件：菜单固定显示在控件正下方 ─────────────────────────── */
 function Dropdown(rootId, { placeholder, filterable, onChange }) {
@@ -193,12 +226,14 @@ function Dropdown(rootId, { placeholder, filterable, onChange }) {
       const sub = item.sub ? esc(item.sub) : "";
       const full = sub ? `${main} · ${sub}` : main;
       return `<div class="dd-item${item.value === value ? " active" : ""}"
-                   data-value="${esc(item.value)}" title="${full}">
+                   data-value="${esc(item.value)}" data-tip="${full}">
                 <span class="item-main">${main}</span>${sub ? `<span class="item-sub">${sub}</span>` : ""}
               </div>`;
     }).join("");
+    bindTooltips(menu);
     menu.querySelectorAll(".dd-item").forEach((node) => {
       node.addEventListener("click", () => {
+        hideTooltip();
         select(node.dataset.value);
         close();
       });
@@ -301,11 +336,11 @@ async function loadModels() {
 async function loadStages() {
   const stages = await api("/api/stages");
   $("stages").innerHTML = stages.map((s, index) =>
-    `<label class="tip" title="${esc(s.description)}">
+    `<label data-tip="${esc(s.description)}">
        <input type="checkbox" value="${esc(s.key)}" ${index < 5 ? "checked" : ""}>
        ${esc(s.name)} <span class="en">${esc(s.key)}</span>
-       <span class="tip-text">${esc(s.description)}</span>
      </label>`).join("");
+  bindTooltips($("stages"));
 }
 
 let previewToken = 0;
