@@ -124,15 +124,6 @@ def uninstall_workspace(directory: Optional[str] = None) -> Dict[str, Any]:
     return {"status": status, "target": prompt_path}
 
 
-def _patcher_library_available() -> bool:
-    import importlib.util
-
-    try:
-        return importlib.util.find_spec("codex_session_patcher") is not None
-    except (ImportError, ValueError):
-        return False
-
-
 def status(directory: Optional[str] = None) -> Dict[str, Any]:
     """汇总当前安装状态。"""
     from . import verify
@@ -143,8 +134,6 @@ def status(directory: Optional[str] = None) -> Dict[str, Any]:
 
     return {
         "opencode": verify.find_opencode(),
-        "codex_patcher": paths.find_command("codex-patcher"),
-        "patcher_library": _patcher_library_available(),
         "global_prompt": {
             "path": global_path,
             "exists": os.path.exists(global_path),

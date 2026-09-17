@@ -82,10 +82,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     state = installer.status()
     print("== speakfreely 状态 ==")
     print("OpenCode CLI:   {}".format(state["opencode"] or "未找到"))
-    print("codex-patcher:  {}{}".format(
-        state["codex_patcher"] or "未找到",
-        "" if state.get("patcher_library") else "（库不可用，清理功能受限）",
-    ))
+    print("会话核心:       {}（内置，不再依赖上游）".format(OK))
 
     gp = state["global_prompt"]
     mark = OK if gp["exists"] and gp["managed"] else (WARN if gp["exists"] else FAIL)
@@ -188,18 +185,20 @@ def cmd_clean(args: argparse.Namespace) -> int:
     try:
         result = cleaner.clean_opencode(
             all_sessions=args.all,
+            session=args.session,
             dry_run=args.dry_run,
             show_content=args.dry_run,
-            clean_reasoning=not args.keep_reasoning,
+            clean_reasoning=True if args.clean_reasoning else None,
+            replacement=args.replacement,
+            stage=args.stage,
             db_path=args.db,
         )
     except Exception as exc:  # noqa: BLE001 - 顶层命令需要把错误变成可读输出
-        print("{} 清理失败: {}".format(FAIL, exc))
-        return 1
+        if os.environ.get("SPEAKFREELY_DEBUG"):
+            import traceback
 
-    if not result["available"]:
-        print("{} {}".format(FAIL, result["reason"]))
-        print("   安装: https://github.com/ryfineZ/codex-session-patcher 或 pip install -e .")
+            traceback.print_exc()
+        print("{} 清理失败: {}".format(FAIL, exc))
         return 1
 
     if not result["sessions"]:
@@ -225,6 +224,36 @@ def cmd_clean(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("")
         print("确认无误后执行: speakfreely clean{}".format(" --all" if args.all else ""))
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    from . import cleaner
+
+    if args.backup:
+        try:
+            cleaner.restore_backup(args.backup, db_path=args.db)
+        except Exception as exc:  # noqa: BLE001
+            print("{} 恢复失败: {}".format(FAIL, exc))
+            return 1
+        print("{} 已从备份恢复: {}".format(OK, args.backup))
+        return 0
+
+    try:
+        backups = cleaner.list_backups(db_path=args.db)
+    except Exception as exc:  # noqa: BLE001
+        print("{} 读取备份失败: {}".format(FAIL, exc))
+        return 1
+
+    if not backups:
+        print("{} 没有可用备份".format(WARN))
+        return 0
+
+    print("可用备份（新→旧）:")
+    for item in backups:
+        print("  {}  {}  {}".format(item["mtime_str"], item["filename"], item["size"]))
+    print("")
+    print("恢复: speakfreely restore --backup <路径>")
     return 0
 
 
@@ -271,12 +300,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("--model")
     p_verify.set_defaults(func=cmd_verify)
 
-    p_clean = sub.add_parser("clean", help="清理被拒会话（直接调用 codex-session-patcher 库）")
+    p_clean = sub.add_parser("clean", help="清理被拒会话（内置核心）")
     p_clean.add_argument("--all", action="store_true", help="处理全部会话")
+    p_clean.add_argument("--session", help="只处理指定会话 ID")
     p_clean.add_argument("--dry-run", action="store_true", help="仅预览")
-    p_clean.add_argument("--keep-reasoning", action="store_true", help="保留推理内容，仅替换拒绝回复")
+    p_clean.add_argument("--stage", help="使用工作流阶段的替换文案: recon/enum/analyze/exploit/evidence")
+    p_clean.add_argument("--replacement", help="自定义替换文本")
+    p_clean.add_argument("--clean-reasoning", action="store_true", help="同时移除 thinking/reasoning 内容")
     p_clean.add_argument("--db", help="指定 OpenCode 数据库路径（默认 ~/.local/share/opencode/opencode.db）")
     p_clean.set_defaults(func=cmd_clean)
+
+    p_restore = sub.add_parser("restore", help="列出/恢复数据库备份")
+    p_restore.add_argument("--list", action="store_true", help="列出全部备份")
+    p_restore.add_argument("--backup", help="要恢复的备份路径")
+    p_restore.add_argument("--db", help="指定 OpenCode 数据库路径")
+    p_restore.set_defaults(func=cmd_restore)
 
     return parser
 

@@ -1,12 +1,13 @@
 # opencode-speak-freely
 
-OpenCode / 编码代理的**低拒答工作流实践**沉淀：提示词分层、多轮工作流、会话修复策略。
+**OpenCode 专属**的低拒答工作流实践：提示词分层、多轮工作流、会话修复策略。
 
-> 目标：把"AI 拒绝安全测试请求"这件事从"玄学"变成可复现的工程流程。
+> 目标：把"OpenCode 拒绝安全测试请求"这件事从"玄学"变成可复现的工程流程。
+> 范围明确：只做 OpenCode，不做其他平台。
 
 ## 背景
 
-在安全测试、CTF、漏洞研究场景中，编码代理（OpenCode、Codex CLI、Claude Code）会拒绝涉及安全操作的请求，并且同一个请求、同一份上下文，**有时通过、有时被拒**。本项目沉淀了以下结论和产物：
+在安全测试、CTF、漏洞研究场景中，OpenCode 会拒绝涉及安全操作的请求，并且同一个请求、同一份上下文，**有时通过、有时被拒**。本项目沉淀了以下结论和产物：
 
 1. 拒绝是模型采样层的概率决策，不是确定性规则 —— 提示词只能提高概率
 2. 提示词的"注入强度"和"可信度"互斥：权威声明容易被识破为注入，中性文档可信但没有授权钩子
@@ -21,16 +22,19 @@ OpenCode / 编码代理的**低拒答工作流实践**沉淀：提示词分层�
 | 路径 | 内容 |
 |---|---|
 | `speakfreely/` | 一键 CLI（Python stdlib，核心逻辑可被未来 Web UI 复用） |
+| `speakfreely/core/` | 内置会话核心：拒绝检测、清理管线、SQLite 读写/备份/恢复（改编自 codex-session-patcher，MIT，见 `core/ATTRIBUTION.md`） |
+| `speakfreely/config.py` | 本工具配置 `~/.config/speakfreely/config.json`（替换文本、自定义关键词） |
+| `speakfreely/cleaner.py` | 清理与恢复编排 |
 | `scripts/speakfreely` | CLI 启动器 |
 | `docs/principles.md` | 原理：拒绝的机制、注入强度与可信度的权衡、提通过率的手段 |
 | `docs/research.md` | 调研笔记：工作流越狱、prefill 注入、Policy Puppetry、Crescendo 等（含数据与出处） |
 | `docs/workflow.md` | 多轮工作流方法论：把敏感目标拆进普通工程步骤（7 阶段） |
-| `docs/tooling.md` | 对 codex-session-patcher 的改造方案：prefill 式替换、AI 改写提示词、多轮引导 |
+| `docs/tooling.md` | 与上游的差异、已修复的两个上游问题、后续改造方向 |
 | `prompts/opencode-global.md` | 全局提示词（OpenCode 桌面/CLI 通用），当前线上版本 |
-| `prompts/opencode-workspace.md` | 工作空间版提示词（带 `managed-by` 标记，兼容 codex-session-patcher 卸载） |
+| `prompts/opencode-workspace.md` | 工作空间版提示词（带 `managed-by` 标记） |
 | `prompts/project-roe.md` | 项目级 engagement/ROE 模板（`speakfreely init` 使用） |
 | `prompts/prefill-replacements.md` | 会话清理的替换文本模板（按阶段） |
-| `tests/test_smoke.py` | 冒烟测试（stdlib unittest） |
+| `tests/` | 冒烟测试 + 核心管线测试（stdlib unittest，35 例） |
 
 ## 一键使用（推荐）
 
@@ -49,11 +53,14 @@ OpenCode / 编码代理的**低拒答工作流实践**沉淀：提示词分层�
 ./scripts/speakfreely next --replacement  # 被拒时用的清理替换文案
 ./scripts/speakfreely next --copy         # 直接复制到剪贴板
 
-# 3. 查看状态 / 清理被拒会话 / 卸载
+# 3. 查看状态 / 清理被拒会话 / 恢复 / 卸载
 ./scripts/speakfreely status
-./scripts/speakfreely clean --dry-run    # 只预览，不改数据库
-./scripts/speakfreely clean              # 执行（自动整库备份）
-./scripts/speakfreely clean --keep-reasoning   # 只替换拒绝回复，保留推理
+./scripts/speakfreely clean --dry-run            # 只预览，不改数据库
+./scripts/speakfreely clean                      # 执行（自动整库备份，默认保留推理内容）
+./scripts/speakfreely clean --stage analyze      # 用工作流阶段的 prefill 式替换文案
+./scripts/speakfreely clean --clean-reasoning    # 同时移除 thinking/reasoning
+./scripts/speakfreely restore                    # 列出备份
+./scripts/speakfreely restore --backup <路径>    # 从备份恢复
 ./scripts/speakfreely uninstall
 ```
 
@@ -63,13 +70,8 @@ OpenCode / 编码代理的**低拒答工作流实践**沉淀：提示词分层�
 # 1. 安装全局提示词（对所有项目和会话生效）
 ./scripts/install-global.sh
 
-# 2. 在目标项目里启用项目级 ROE（把 {{...}} 换成真实信息）
-cp prompts/project-roe.md ~/project/<目标项目>/AGENTS.md
-$EDITOR ~/project/<目标项目>/AGENTS.md
-
-# 3. 用 codex-session-patcher 处理被拒会话
-codex-patcher --format opencode --latest --dry-run --show-content   # 预览
-codex-patcher --format opencode --latest                            # 执行（自动备份）
+# 2. 在目标项目里启用项目级 ROE
+./scripts/speakfreely init ~/project/<目标项目> --target ... --authorization ...
 ```
 
 ## 分层策略

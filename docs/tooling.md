@@ -93,22 +93,38 @@ Rules:
 文本，用户复制发送；被拒后自动进入清理流程。把"注入 + 改写 + 清理"串成一条
 可点击的流水线。
 
-## 上游缺陷记录（2026-09 实测）
+## 与上游的关系（2026-09 起：已内置）
 
-`codex-patcher --format opencode`（CLI）在 OpenCode 路径下会崩：
+本项目不再依赖 codex-session-patcher 的运行时代码，核心已移植到
+`speakfreely/core/`（MIT，见 `core/ATTRIBUTION.md`），并做了以下修改：
 
-```
-AttributeError: 'dict' object has no attribute 'session_id'
-```
+| 项 | 上游 | 本项目 |
+|---|---|---|
+| 默认替换文本 | 承诺式（"我会按授权范围继续…"） | prefill 式（"继续。把下一步拆成可执行的操作…"） |
+| 推理内容处理 | 默认删除 | 默认保留，`--clean-reasoning` 才删除 |
+| 替换文案 | 固定文本 | 支持 `--stage` 按工作流阶段取文案、`--replacement` 自定义、配置文件覆盖 |
+| 会话选择 | 仅 latest/all | 增加 `--session <id>`、`--db <路径>` |
+| 备份恢复 | 有备份，无恢复入口 | `speakfreely restore` 列出/恢复 |
+| 格式范围 | Codex JSONL + Claude Code + OpenCode | 永久仅 OpenCode（本项目不做多平台） |
 
-原因：`codex_session_patcher/cli.py:485` 的 `_cli_process_opencode` 用属性访问
-`session.session_id`，而 `OpenCodeDBAdapter.list_sessions()` 返回的是 **dict**。
-（Codex 路径没问题，因为 `SessionParser` 返回的是 `SessionInfo` dataclass。）
+### 已修复的两个上游问题
 
-项目内规避方式：`speakfreely clean` 不调用该 CLI，直接使用
-`codex_session_patcher` 库（`clean_session_jsonl` + `OpenCodeDBAdapter`），
-逻辑与 Web 后端一致，见 `speakfreely/cleaner.py`。修复上游只需把 485/488/516
-三行的属性访问改成 `session['session_id']`。
+1. **`codex-patcher --format opencode` CLI 崩溃**
+
+   ```
+   AttributeError: 'dict' object has no attribute 'session_id'
+   ```
+
+   上游 `cli.py:485` 用属性访问 `session.session_id`，而
+   `OpenCodeDBAdapter.list_sessions()` 返回 dict。本项目的 `clean` 直接走库，
+   不受影响；给出上游修复方式：485/488/516 三行改成 `session['session_id']`。
+
+2. **WAL 数据库副本无法只读打开**（本仓库实测发现并修复）
+
+   `.backup` 出来的副本没有 `-shm/-wal`，`mode=ro` 连接会报
+   `unable to open database file`。修复：`core/sqlite_store.py:_connect`
+   在只读失败时回退为普通连接 + `PRAGMA query_only=1`（不写数据，仅允许
+   SQLite 自行创建 WAL 索引）。回归测试：`tests/test_core.py::TestWalBackupCopy`。
 
 ## 改造后的验证方法
 
