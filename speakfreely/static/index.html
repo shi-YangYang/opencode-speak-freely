@@ -18,11 +18,12 @@
   header .status { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 14px; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
-  main { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 14px; padding: 14px;
+  main { display: grid; grid-template-columns: clamp(400px, 33%, 560px) minmax(0, 1fr); gap: 14px; padding: 14px;
          height: calc(100vh - 48px); overflow: hidden; align-items: stretch; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
            padding: 14px 14px 26px; height: 100%; overflow-y: auto; overflow-x: hidden; }
   .panel.left { display: flex; flex-direction: column; padding-bottom: 14px; }
+  .panel.right { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 14px; }
   .panel.left > * { flex: 0 0 auto; }
   label { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 3px; }
   label:first-child { margin-top: 0; }
@@ -65,7 +66,8 @@
     background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.5);
     color: var(--text); font-size: 12px; line-height: 1.55; }
-  .tutorial { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+  .tutorial { flex: 1 1 auto; min-height: 100px; overflow-y: auto; margin-top: 14px;
+              border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
   .tutorial h3 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
   .tutorial h3:first-child { margin-top: 0; }
   .tutorial ol, .tutorial ul { margin: 6px 0; padding-left: 20px; }
@@ -75,17 +77,17 @@
   .tutorial .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-         height: 320px; overflow-y: auto; overflow-x: hidden; }
+         flex: 0 1 auto; height: 320px; min-height: 160px; overflow-y: auto; overflow-x: hidden; }
   /* 常显滚动条（macOS 默认悬浮隐藏） */
-  #log, .panel, .dd-menu, #preview, textarea { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
-  #log::-webkit-scrollbar, .panel::-webkit-scrollbar, .dd-menu::-webkit-scrollbar,
+  #log, .panel, .dd-menu, #preview, textarea, .tutorial { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
+  #log::-webkit-scrollbar, .panel::-webkit-scrollbar, .dd-menu::-webkit-scrollbar, .tutorial::-webkit-scrollbar,
   #preview::-webkit-scrollbar, textarea::-webkit-scrollbar { width: 10px; }
-  #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track,
+  #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track, .tutorial::-webkit-scrollbar-track,
   #preview::-webkit-scrollbar-track, textarea::-webkit-scrollbar-track { background: #0b0e13; border-radius: 8px; }
-  #log::-webkit-scrollbar-thumb, .panel::-webkit-scrollbar-thumb, .dd-menu::-webkit-scrollbar-thumb,
+  #log::-webkit-scrollbar-thumb, .panel::-webkit-scrollbar-thumb, .dd-menu::-webkit-scrollbar-thumb, .tutorial::-webkit-scrollbar-thumb,
   #preview::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb {
     background: #39435a; border-radius: 8px; border: 2px solid #0b0e13; }
-  #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover,
+  #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover, .tutorial::-webkit-scrollbar-thumb:hover,
   #preview::-webkit-scrollbar-thumb:hover, textarea::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
   #preview { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;
              flex: 1 1 auto; min-height: 48px; overflow: auto; }
@@ -160,7 +162,7 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel right">
     <label>运行日志</label>
     <div id="log">就绪。选项目 → 选会话（或新建）→ 选模型 → 输入目标 → 运行。</div>
 
