@@ -71,7 +71,18 @@
   .tutorial .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-         height: 320px; overflow: auto; }
+         height: 320px; overflow-y: auto; overflow-x: hidden; }
+  /* 常显滚动条（macOS 默认悬浮隐藏） */
+  #log, .panel, .dd-menu, #preview { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
+  #log::-webkit-scrollbar, .panel::-webkit-scrollbar,
+  .dd-menu::-webkit-scrollbar, #preview::-webkit-scrollbar { width: 10px; }
+  #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track,
+  .dd-menu::-webkit-scrollbar-track, #preview::-webkit-scrollbar-track { background: #0b0e13; border-radius: 8px; }
+  #log::-webkit-scrollbar-thumb, .panel::-webkit-scrollbar-thumb,
+  .dd-menu::-webkit-scrollbar-thumb, #preview::-webkit-scrollbar-thumb {
+    background: #39435a; border-radius: 8px; border: 2px solid #0b0e13; }
+  #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover,
+  .dd-menu::-webkit-scrollbar-thumb:hover, #preview::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
   #preview { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px;
              max-height: 240px; overflow: auto; }
   .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px; }
