@@ -452,7 +452,7 @@ def cmd_vibe(args: argparse.Namespace) -> int:
         result = auto_module.run_auto(
             project_dir=args.project or os.getcwd(),
             goal=goal,
-            stages=None,
+            stages=[item.strip() for item in args.stages.split(",")] if args.stages else None,
             models=models,
             max_attempts=args.max_attempts,
             max_sends=args.max_sends,
@@ -594,6 +594,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_vibe.add_argument("--models", help="逗号分隔的模型轮换表")
     p_vibe.add_argument("--prime", type=int, default=0, help="预热示例对数（many-shot）")
     p_vibe.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源")
+    p_vibe.add_argument("--stages", help="逗号分隔的阶段（默认全部 5 个）")
     p_vibe.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出")
     p_vibe.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数")
     p_vibe.add_argument("--max-sends", type=int, default=30, help="总发送上限")
