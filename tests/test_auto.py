@@ -417,6 +417,23 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         content = open(real_file, encoding="utf-8").read()
         self.assertIn("<!-- {}: 补充文档 -->".format(seed.MARKER), content)
 
+    def test_pick_template(self):
+        from speakfreely import seed
+
+        self.assertEqual(seed.pick_template("梳理注册接口和表单字段"), "web")
+        self.assertEqual(seed.pick_template("分析 ELF 样本的校验逻辑"), "binary")
+        self.assertEqual(seed.pick_template("修订 spec 文档的排除项"), "doc")
+        self.assertEqual(seed.pick_template("搭建数据管道"), "harness")
+
+    def test_dry_run_seed_does_not_write(self):
+        auto_module.run_auto(
+            project_dir=self.temp,
+            goal="dry-run 不写文件",
+            seed=True,
+            dry_run=True,
+        )
+        self.assertFalse(os.path.exists(os.path.join(self.temp, "tools")))
+
 
 class TestJudgeIntegration(unittest.TestCase):
     """关键词漏检、裁判兜底命中的完整路径。"""

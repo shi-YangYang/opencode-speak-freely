@@ -243,6 +243,21 @@ DEFAULT_NAMES = {
     "doc": "doc_edit",
 }
 
+TEMPLATE_HINTS = [
+    ("web", ["网页", "页面", "表单", "抓取", "接口", "api", "http", "注册", "登录", "浏览器", "cookie"]),
+    ("binary", ["二进制", "样本", "elf", "固件", "反编译", "逆向", "so", "apk", "dll"]),
+    ("doc", ["文档", "spec", "说明", "readme", "报告", "编辑", "修订"]),
+]
+
+
+def pick_template(goal: str) -> str:
+    """按目标文本猜一个模板；猜不到用 harness。"""
+    lowered = (goal or "").lower()
+    for template, hints in TEMPLATE_HINTS:
+        if any(hint in lowered for hint in hints):
+            return template
+    return "harness"
+
 
 def _slugify(value: str, fallback: str = "task_harness") -> str:
     slug = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")

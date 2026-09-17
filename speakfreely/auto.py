@@ -116,17 +116,21 @@ def run_auto(
     models = models or []
 
     seed_prompt: Optional[str] = None
+    seed_plan_note: Optional[str] = None
     if seed:
-        from . import seed as seed_module
+        if dry_run:
+            seed_plan_note = "将用模板 {} 生成 tools/ 下的半成品文件".format(seed_template)
+        else:
+            from . import seed as seed_module
 
-        seeded = seed_module.scaffold(
-            project_dir=project_dir,
-            goal=goal or "Task harness",
-            name=seed_name,
-            template=seed_template,
-        )
-        seed_prompt = seeded["prompt"]
-        emit("已生成半成品: {}".format(seeded["path"]))
+            seeded = seed_module.scaffold(
+                project_dir=project_dir,
+                goal=goal or "Task harness",
+                name=seed_name,
+                template=seed_template,
+            )
+            seed_prompt = seeded["prompt"]
+            emit("已生成半成品: {}".format(seeded["path"]))
 
     if dry_run:
         return {
@@ -139,7 +143,7 @@ def run_auto(
                 "models": models,
                 "max_attempts": max_attempts,
                 "max_sends": max_sends,
-                "seed": seed_prompt,
+                "seed": seed_plan_note,
             },
             "stages": [],
             "sends": 0,

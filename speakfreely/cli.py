@@ -433,6 +433,64 @@ def cmd_prime(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_vibe(args: argparse.Namespace) -> int:
+    """一句话目标 -> 全自动跑完（seed 骨架 + 全阶段 + 自动清理重试）。"""
+    from . import auto as auto_module
+    from . import seed as seed_module
+
+    goal = args.goal
+    template = args.template or seed_module.pick_template(goal)
+    models = [item.strip() for item in args.models.split(",")] if args.models else None
+
+    print("== vibe 模式 ==")
+    print("目标: {}".format(goal))
+    print("模板: {}".format(template))
+    print("模型: {}".format(", ".join(models) if models else "配置默认"))
+    print("")
+
+    try:
+        result = auto_module.run_auto(
+            project_dir=args.project or os.getcwd(),
+            goal=goal,
+            stages=None,
+            models=models,
+            max_attempts=args.max_attempts,
+            max_sends=args.max_sends,
+            timeout=args.timeout,
+            dry_run=args.dry_run,
+            seed=True,
+            seed_template=template,
+            prime=args.prime,
+            prefill_mode=args.prefill,
+            crescendo=not args.no_crescendo,
+            on_event=lambda line: print(line, flush=True),
+        )
+    except KeyboardInterrupt:
+        print("")
+        print("{} 已中断".format(WARN))
+        return 130
+
+    print("")
+    if result.get("dry_run"):
+        for key, value in result["plan"].items():
+            print("{}: {}".format(key, value))
+        return 0
+
+    if result["ok"]:
+        print("{} vibe 完成：{} 次发送，花费 {:.4f}".format(
+            OK, result["sends"], result["cost"]
+        ))
+        if result.get("session_id"):
+            print("   会话: {}（Desktop 打开项目即可继续）".format(result["session_id"]))
+        return 0
+
+    print("{} 中止: {}".format(FAIL, result["reason"]))
+    print("   已发送 {} 次，花费 {:.4f}".format(result["sends"], result["cost"]))
+    if result.get("session_id"):
+        print("   会话: {}（可换模型重试）".format(result["session_id"]))
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -527,6 +585,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_prime.add_argument("--ask", help="在预热历史末尾附上你的请求")
     p_prime.add_argument("--db", help="指定 OpenCode 数据库路径")
     p_prime.set_defaults(func=cmd_prime)
+
+    p_vibe = sub.add_parser("vibe", help="一句话目标：自动 seed + 全阶段推进 + 清理重试")
+    p_vibe.add_argument("goal", help="自然语言目标（写进半成品文件，不直接发给模型）")
+    p_vibe.add_argument("--project", help="项目目录（默认当前目录）")
+    p_vibe.add_argument("--template", choices=["harness", "web", "binary", "doc"],
+                        help="骨架模板（默认按目标自动选择）")
+    p_vibe.add_argument("--models", help="逗号分隔的模型轮换表")
+    p_vibe.add_argument("--prime", type=int, default=0, help="预热示例对数（many-shot）")
+    p_vibe.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源")
+    p_vibe.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出")
+    p_vibe.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数")
+    p_vibe.add_argument("--max-sends", type=int, default=30, help="总发送上限")
+    p_vibe.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数")
+    p_vibe.add_argument("--dry-run", action="store_true", help="只打印计划")
+    p_vibe.set_defaults(func=cmd_vibe)
 
     p_report = sub.add_parser("report", help="尝试统计：模型/阶段的发送与拒绝率")
     p_report.add_argument("--days", type=int, help="只看最近 N 天")

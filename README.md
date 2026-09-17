@@ -39,6 +39,19 @@
 | `prompts/prefill-replacements.md` | 会话清理的替换文本模板（按阶段） |
 | `tests/` | 冒烟测试 + 核心管线测试（stdlib unittest，35 例） |
 
+## 一句话目标（vibe 模式，最省事）
+
+```bash
+./scripts/speakfreely vibe "梳理 <目标> 的注册流程并整理证据" \
+    --project ~/project/<目标项目> \
+    --models opencode-go/deepseek-v4.1-flash
+```
+
+- 目标写进半成品文件（不直接发给模型），自动选模板 → 自动跑全部阶段 →
+  被拒自动清理重试/换模型 → 产出落在 `tools/`、`evidence/`
+- 加 `--prime 3` 预热示例历史；`--prefill auto` 用 LLM 生成替换文案
+- 想先看计划加 `--dry-run`；Desktop 里打开项目即可看到会话并接管
+
 ## 一键使用（推荐）
 
 ```bash
