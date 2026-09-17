@@ -61,6 +61,14 @@
     background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.5);
     color: var(--text); font-size: 12px; line-height: 1.55; }
+  .tutorial { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+  .tutorial h3 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
+  .tutorial h3:first-child { margin-top: 0; }
+  .tutorial ol, .tutorial ul { margin: 6px 0; padding-left: 20px; }
+  .tutorial li { margin: 4px 0; }
+  .tutorial code { background: #0d1016; border: 1px solid var(--border); border-radius: 4px;
+                   padding: 1px 5px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .tutorial .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
   #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
          height: 320px; overflow: auto; }
@@ -142,6 +150,46 @@
   <section class="panel">
     <label>运行日志</label>
     <div id="log">就绪。选项目 → 选会话（或新建）→ 选模型 → 输入目标 → 运行。</div>
+
+    <div class="tutorial">
+      <h3>快速上手</h3>
+      <ol>
+        <li>左侧依次选择 <b>项目 → 会话 → 模型</b>（模型可留空，用 OpenCode 默认）</li>
+        <li>在输入框写下目标或消息，点 <b>▶ 运行</b></li>
+        <li>日志实时滚动，完成后到项目目录的 <code>tools/</code>、<code>evidence/</code> 看产物</li>
+      </ol>
+
+      <h3>两种模式</h3>
+      <ul>
+        <li><b>新建会话（默认）</b>：目标写进一个半成品文件，AI 当作"补全代码"来做，自动跑
+          <b>侦察 → 枚举 → 分析 → 验证 → 取证</b> 五个阶段
+          <span class="note">这就是为什么推荐用"梳理 X 的流程并整理证据"这种工程化说法</span></li>
+        <li><b>已有会话</b>：输入直接作为消息发进该会话；被 AI 拒绝时，自动把拒绝替换成
+          "继续…" 再重试 <span class="note">最多 3 次，仍失败就换个模型重试</span></li>
+      </ul>
+
+      <h3>被拒了怎么办</h3>
+      <ul>
+        <li>点 <b>清理该会话</b>：扫描该会话里的拒绝回复并替换（自动整库备份）</li>
+        <li>点 <b>开启 watch</b>：放到后台轮询，产出新拒绝自动替换；之后在 Desktop 里发"继续"即可</li>
+        <li>想回滚：终端跑 <code>./scripts/speakfreely restore</code></li>
+      </ul>
+
+      <h3>小贴士</h3>
+      <ul>
+        <li>五个阶段鼠标悬浮有说明；不想跑全流程就取消勾选要跳过的阶段</li>
+        <li>不同模型的拒审阈值差别很大——连续被拒时，<b>换模型比改提示词有效</b></li>
+        <li>"预热示例"会在会话前注入几对示例问答（many-shot），可选</li>
+        <li>"替换文案 = LLM 生成"需要先在 <code>~/.config/speakfreely/config.json</code> 配好模型</li>
+      </ul>
+
+      <h3>命令行的等价操作</h3>
+      <ul>
+        <li><code>speakfreely vibe "目标" --project …</code>：本页"新建会话"的全自动版本</li>
+        <li><code>speakfreely watch --project …</code>：本页的 watch 开关</li>
+        <li><code>speakfreely report</code>：看各模型的拒绝率与花费</li>
+      </ul>
+    </div>
   </section>
 </main>
 
