@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Python 3.8 syntax check
+        if: matrix.python-version == '3.12'
+        run: |
+          python3 - <<'EOF'
+          import ast, pathlib
+          bad = []
+          for path in list(pathlib.Path("speakfreely").rglob("*.py")) + list(pathlib.Path("tests").rglob("*.py")):
+              try:
+                  ast.parse(path.read_text(encoding="utf-8"), feature_version=(3, 8))
+              except SyntaxError as exc:
+                  bad.append(f"{path}:{exc.lineno}: {exc.msg}")
+          if bad:
+              raise SystemExit("Python 3.8 不兼容:\n" + "\n".join(bad))
+          EOF
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests
+
+      - name: CLI smoke
+        run: |
+          set -euo pipefail
+          python3 -m speakfreely.cli --version
+          python3 -m speakfreely.cli next --list
+          python3 -m speakfreely.cli status > /dev/null
+          python3 -m speakfreely.cli report > /dev/null
+
+          TMP="$(mktemp -d)"
+          python3 -m speakfreely.cli seed "$TMP" --goal "ci smoke" > /dev/null
+          test -f "$TMP/tools/task_harness.py"
+          grep -q "NotImplementedError" "$TMP/tools/task_harness.py"
+          grep -q "ci smoke" "$TMP/tools/task_harness.py"
+
+          python3 -m speakfreely.cli seed "$TMP" --goal "ci web" --template web > /dev/null
+          test -f "$TMP/tools/web_probe.py"
+
+          python3 -m speakfreely.cli clean --dry-run --db "$TMP/missing.db"

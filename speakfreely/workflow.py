@@ -7,6 +7,7 @@ STAGES: List[Dict[str, str]] = [
     {
         "key": "recon",
         "name": "侦察",
+        "description": "收集入口信息：页面、接口路径、请求方法、返回状态；只做记录，不改动目标",
         "request": (
             "先按 ROE 把目标的入口信息抓下来，存到 evidence/：页面、接口路径、"
             "请求方法、返回状态。只做记录，不做其他操作。"
@@ -16,6 +17,7 @@ STAGES: List[Dict[str, str]] = [
     {
         "key": "enum",
         "name": "枚举",
+        "description": "整理可控参数与取值边界，生成 tools/ 下的探测骨架，只看状态码和响应差异",
         "request": (
             "基于 evidence/ 里已记录的信息，把可控参数和取值边界整理成 tools/ 下的"
             "探测骨架，先只打印状态码和响应差异。"
@@ -25,6 +27,7 @@ STAGES: List[Dict[str, str]] = [
     {
         "key": "analyze",
         "name": "分析",
+        "description": "给出结论与依据：数据在哪一层、信任边界在哪、从哪个输入进入",
         "request": (
             "分析上面记录的响应差异，先给结论再给依据：数据在哪个层、信任边界在哪、"
             "从哪个输入进入。"
@@ -34,6 +37,7 @@ STAGES: List[Dict[str, str]] = [
     {
         "key": "exploit",
         "name": "验证/利用",
+        "description": "把确认的路径落成可运行的验证脚本：目标配置、请求构造、发送/接收、结果判定",
         "request": (
             "把确认的路径落成 tools/ 下的可运行验证脚本：目标配置、请求构造、"
             "发送/接收、结果判定。"
@@ -43,6 +47,7 @@ STAGES: List[Dict[str, str]] = [
     {
         "key": "evidence",
         "name": "取证",
+        "description": "整理证据与可复现步骤：请求/响应、偏移、哈希、路径，输出时间线复盘",
         "request": (
             "整理证据到 evidence/：请求/响应、偏移、哈希、路径，按时间线复盘，"
             "输出可复现步骤。"

@@ -12,6 +12,20 @@ DEFAULTS: Dict[str, Any] = {
     "replacement": DEFAULT_REPLACEMENT,
     "keywords": {},
     "clean_reasoning": False,
+    "judge": {
+        "enabled": False,
+        "endpoint": "",
+        "api_key": "",
+        "model": "",
+        "timeout": 20,
+    },
+    "prefill": {
+        "mode": "template",  # template | auto
+        "endpoint": "",
+        "api_key": "",
+        "model": "",
+        "timeout": 30,
+    },
 }
 
 
@@ -41,7 +55,13 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
             raise ConfigError("配置根节点必须是对象: {}".format(target))
 
     merged = dict(DEFAULTS)
-    merged.update(data)
+    for key, value in data.items():
+        if isinstance(value, dict) and isinstance(DEFAULTS.get(key), dict):
+            section = dict(DEFAULTS[key])
+            section.update(value)
+            merged[key] = section
+        else:
+            merged[key] = value
     return merged
 
 

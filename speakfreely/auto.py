@@ -7,12 +7,31 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from . import attempts as attempts_module
 from . import cleaner as cleaner_module
+from . import config as config_module
+from . import judge as judge_module
+from . import prefill as prefill_module
 from . import workflow
 from .core import OpenCodeDBAdapter, RefusalDetector
 from .runner import run_open
 
 DEFAULT_RETRY_PROMPT = "继续"
+
+SUMMARY_LIMIT = 400
+
+
+def _summarize(text: str, limit: int = SUMMARY_LIMIT) -> str:
+    """把上一轮产出压成摘要（优先在句末截断）。"""
+    compact = " ".join((text or "").split())
+    if len(compact) <= limit:
+        return compact
+    window = compact[:limit]
+    for separator in ("。", ".", "\n", "；", ";"):
+        index = window.rfind(separator)
+        if index > limit // 2:
+            return window[: index + 1]
+    return window + "…"
 
 
 def _default_clean_fn(session_id: str, replacement: str, db_path: Optional[str]) -> Dict[str, Any]:
@@ -58,6 +77,12 @@ def run_auto(
     on_event: Optional[Callable[[str], None]] = None,
     seed: bool = False,
     seed_name: Optional[str] = None,
+    seed_template: str = "harness",
+    judge: Any = None,
+    prefill_fn: Any = None,
+    prefill_mode: Optional[str] = None,
+    crescendo: bool = True,
+    prime: int = 0,
 ) -> Dict[str, Any]:
     """按工作流阶段自动推进，被拒时自动清理并重试。
 
@@ -68,6 +93,11 @@ def run_auto(
     runner = runner or run_open
     clean_fn = clean_fn or _default_clean_fn
     detector = detector or RefusalDetector()
+    config = config_module.load_config()
+    if judge is None:
+        judge = judge_module.from_config(config)
+    if prefill_fn is None:
+        prefill_fn = prefill_module.from_config(config, mode=prefill_mode)
 
     def emit(message: str) -> None:
         if on_event:
@@ -86,16 +116,21 @@ def run_auto(
     models = models or []
 
     seed_prompt: Optional[str] = None
+    seed_plan_note: Optional[str] = None
     if seed:
-        from . import seed as seed_module
+        if dry_run:
+            seed_plan_note = "将用模板 {} 生成 tools/ 下的半成品文件".format(seed_template)
+        else:
+            from . import seed as seed_module
 
-        seeded = seed_module.scaffold(
-            project_dir=project_dir,
-            goal=goal or "Task harness",
-            name=seed_name,
-        )
-        seed_prompt = seeded["prompt"]
-        emit("已生成半成品: {}".format(seeded["path"]))
+            seeded = seed_module.scaffold(
+                project_dir=project_dir,
+                goal=goal or "Task harness",
+                name=seed_name,
+                template=seed_template,
+            )
+            seed_prompt = seeded["prompt"]
+            emit("已生成半成品: {}".format(seeded["path"]))
 
     if dry_run:
         return {
@@ -108,7 +143,7 @@ def run_auto(
                 "models": models,
                 "max_attempts": max_attempts,
                 "max_sends": max_sends,
-                "seed": seed_prompt,
+                "seed": seed_plan_note,
             },
             "stages": [],
             "sends": 0,
@@ -120,7 +155,21 @@ def run_auto(
     session_id: Optional[str] = None
     sends = 0
     total_cost = 0.0
+    last_summary = ""
     stage_reports: List[Dict[str, Any]] = []
+
+    if prime:
+        from . import prime as prime_module
+
+        primed = prime_module.create_primed_session(
+            project_dir, examples=prime, db_path=db_path
+        )
+        session_id = primed["session_id"]
+        emit(
+            "已创建预热会话: {}（{} 条示例消息）".format(
+                session_id, primed["messages"]
+            )
+        )
 
     for stage_index, stage in enumerate(stage_defs, 1):
         if stage_index == 1 and seed_prompt:
@@ -129,6 +178,8 @@ def run_auto(
             prompt = stage["request"]
             if goal and stage_index == 1:
                 prompt = "目标：{}\n\n{}".format(goal, prompt)
+            if crescendo and last_summary:
+                prompt = "上一轮你已完成（摘要）：{}\n\n{}".format(last_summary, prompt)
 
         report = {
             "stage": stage["key"],
@@ -170,6 +221,18 @@ def run_auto(
                 report["logs"].append(log_path)
 
             if result.get("timeout"):
+                attempts_module.log_attempt(
+                    {
+                        "project": project_dir,
+                        "stage": stage["key"],
+                        "model": model or "",
+                        "refused": False,
+                        "cleaned": False,
+                        "timeout": True,
+                        "cost": float(result.get("cost") or 0),
+                        "text_len": len(result.get("text") or ""),
+                    }
+                )
                 report["attempts"] += 1
                 if report["attempts"] >= max_attempts:
                     stage_reports.append(report)
@@ -180,8 +243,28 @@ def run_auto(
                 continue
 
             output_text = result.get("text") or ""
-            if not detector.detect(output_text):
+            refused = detector.detect(output_text)
+            if not refused and judge is not None and judge_module.should_judge(output_text):
+                if judge.is_refusal(output_text) is True:
+                    judge_module.record_miss(output_text, source="auto")
+                    refused = True
+
+            attempts_module.log_attempt(
+                {
+                    "project": project_dir,
+                    "stage": stage["key"],
+                    "model": model or "",
+                    "refused": refused,
+                    "cleaned": False,
+                    "timeout": False,
+                    "cost": float(result.get("cost") or 0),
+                    "text_len": len(output_text),
+                }
+            )
+
+            if not refused:
                 emit("[{}] 完成（{} 字符）".format(stage["key"], len(output_text)))
+                last_summary = _summarize(output_text)
                 break
 
             emit("[{}] 检测到拒绝，清理会话后重试".format(stage["key"]))
@@ -190,7 +273,13 @@ def run_auto(
                 report["session_id"] = session_id
 
             if session_id:
-                clean_result = clean_fn(session_id, stage["replacement"], db_path)
+                replacement_for_clean = stage["replacement"]
+                if prefill_fn is not None:
+                    generated = prefill_fn.generate(prompt, output_text)
+                    if generated:
+                        replacement_for_clean = generated
+                        emit("    已生成内容感知 prefill")
+                clean_result = clean_fn(session_id, replacement_for_clean, db_path)
                 entry = (clean_result.get("sessions") or [{}])[0]
                 if entry.get("backup"):
                     emit("    已备份: {}".format(entry["backup"]))
@@ -240,3 +329,125 @@ def _latest_session_for(project_dir: str, db_path: Optional[str]) -> Optional[st
         if os.path.realpath(item.get("directory") or "") == target:
             return item["session_id"]
     return sessions[0]["session_id"] if sessions else None
+
+
+def send_to_session(
+    project_dir: str,
+    session_id: str,
+    prompt: str,
+    model: Optional[str] = None,
+    max_attempts: int = 3,
+    timeout: int = 900,
+    db_path: Optional[str] = None,
+    runner: Optional[Callable[..., Dict[str, Any]]] = None,
+    clean_fn: Optional[Callable[..., Dict[str, Any]]] = None,
+    detector: Optional[RefusalDetector] = None,
+    judge: Any = None,
+    prefill_fn: Any = None,
+    retry_prompt: str = DEFAULT_RETRY_PROMPT,
+    on_event: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """向已有会话发一条消息；被拒时自动清理并重试。
+
+    Returns:
+        {ok, text, attempts, sends, cost, session_id, backup, reason}
+    """
+    project_dir = os.path.realpath(os.path.expanduser(project_dir))
+    runner = runner or run_open
+    clean_fn = clean_fn or _default_clean_fn
+    detector = detector or RefusalDetector()
+    config = config_module.load_config()
+    if judge is None:
+        judge = judge_module.from_config(config)
+    if prefill_fn is None:
+        prefill_fn = prefill_module.from_config(config)
+
+    def emit(message: str) -> None:
+        if on_event:
+            on_event(message)
+
+    sends = 0
+    cost = 0.0
+    attempts = 0
+    current = prompt
+    backup = None
+
+    while True:
+        result = runner(
+            current,
+            directory=project_dir,
+            model=model,
+            session=session_id,
+            timeout=timeout,
+        )
+        sends += 1
+        cost += float(result.get("cost") or 0)
+        text = result.get("text") or ""
+
+        if result.get("timeout"):
+            attempts_module.log_attempt(
+                {
+                    "project": project_dir,
+                    "stage": "send",
+                    "model": model or "",
+                    "refused": False,
+                    "cleaned": False,
+                    "timeout": True,
+                    "cost": float(result.get("cost") or 0),
+                    "text_len": len(text),
+                }
+            )
+            attempts += 1
+            if attempts >= max_attempts:
+                return {
+                    "ok": False, "text": text, "attempts": attempts,
+                    "sends": sends, "cost": cost, "session_id": session_id,
+                    "backup": backup, "reason": "超时",
+                }
+            continue
+
+        refused = detector.detect(text)
+        if not refused and judge is not None and judge_module.should_judge(text):
+            if judge.is_refusal(text) is True:
+                judge_module.record_miss(text, source="send")
+                refused = True
+
+        attempts_module.log_attempt(
+            {
+                "project": project_dir,
+                "stage": "send",
+                "model": model or "",
+                "refused": refused,
+                "cleaned": False,
+                "timeout": False,
+                "cost": float(result.get("cost") or 0),
+                "text_len": len(text),
+            }
+        )
+
+        if not refused:
+            return {
+                "ok": True, "text": text, "attempts": attempts,
+                "sends": sends, "cost": cost, "session_id": session_id,
+                "backup": backup, "reason": None,
+            }
+
+        emit("检测到拒绝，清理会话后重试")
+        replacement = None
+        if prefill_fn is not None:
+            replacement = prefill_fn.generate(prompt, text)
+        clean_result = clean_fn(session_id, replacement or "", db_path)
+        entry = (clean_result.get("sessions") or [{}])[0]
+        backup = entry.get("backup") or backup
+        if entry.get("error"):
+            emit("清理失败: {}".format(entry["error"]))
+
+        attempts += 1
+        if attempts >= max_attempts:
+            return {
+                "ok": False, "text": text, "attempts": attempts,
+                "sends": sends, "cost": cost, "session_id": session_id,
+                "backup": backup,
+                "reason": "连续被拒 {} 次".format(max_attempts),
+            }
+        current = retry_prompt

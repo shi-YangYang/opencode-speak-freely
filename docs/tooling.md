@@ -93,10 +93,24 @@ Rules:
 |---|---|---|
 | `speakfreely watch` | Desktop 用户 | 轮询数据库，发现新拒绝自动替换（自动备份）；用户在 Desktop 里只需发"继续" |
 | `speakfreely auto` | CLI 无人值守 | 调 `opencode run --format json`，解析输出→检测拒绝→清理会话→重试/换模型→进入下一阶段 |
+| `speakfreely seed` | 代码上下文 | 生成半成品文件（4 种模板）或向真实文件追加 TODO；"补全 TODO"作为请求 |
+| `speakfreely prime` | 预热（many-shot） | 直接建库写入 N 对示例问答的会话 |
+| `speakfreely report` | 数据闭环 | 汇总每次发送（模型/阶段）的拒绝率与花费 |
+| `speakfreely web` | 本地 Web UI | 纯标准库 HTTP 服务 + 单页前端：选项目/会话/模型 + 输入框 + 日志 |
+
+### 本轮优化（2026-09-17）
+
+| 项 | 优化前 | 优化后 |
+|---|---|---|
+| 拒绝检测 | 关键词表（实测漏检 4+ 变体） | 关键词 + **正则层**（我不会/帮不了/做不到/I won't）+ 可选 **LLM 裁判**；漏检写入 `misses.jsonl` |
+| 替换文案 | 固定模板 | 可选 **内容感知 prefill**（LLM 生成"答案开头"，失败回退模板） |
+| 阶段推进 | 固定话术 | **Crescendo**：下一轮引用上一轮产出摘要 |
+| 模型选择 | 手工试 | `report` 按模型统计拒绝率，`auto --models` 轮换 |
+| 会话预热 | 无 | `prime`（many-shot 示例历史） |
+| seed | 单一网络探测模板 | harness/web/binary/doc 四模板 + `--file` 真实文件模式（JAWS-1） |
 
 - `auto` 的日志：`<项目>/evidence/auto/<时间戳>/stageN-attemptM.json`
-- `auto` 的阶段文案来自 `workflow.py`；被拒后的重试提示为"继续"
-- 两者共用同一套检测器与清理器，与手动 `clean` 完全同路径，只是触发者从人变成轮询/循环
+- 被拒后的重试提示为"继续"；两者共用同一套检测器与清理器，与手动 `clean` 完全同路径
 
 ## 与上游的关系（2026-09 起：已内置）
 

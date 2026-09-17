@@ -192,6 +192,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
             replacement=args.replacement,
             stage=args.stage,
             db_path=args.db,
+            prefill_mode=args.prefill,
         )
     except Exception as exc:  # noqa: BLE001 - 顶层命令需要把错误变成可读输出
         if os.environ.get("SPEAKFREELY_DEBUG"):
@@ -274,6 +275,10 @@ def cmd_auto(args: argparse.Namespace) -> int:
             timeout=args.timeout,
             dry_run=args.dry_run,
             seed=args.seed,
+            seed_template=args.seed_template,
+            prefill_mode=args.prefill,
+            crescendo=not args.no_crescendo,
+            prime=args.prime,
             on_event=lambda line: print(line, flush=True),
         )
     except KeyboardInterrupt:
@@ -340,12 +345,21 @@ def cmd_watch(args: argparse.Namespace) -> int:
 def cmd_seed(args: argparse.Namespace) -> int:
     from . import seed as seed_module
 
-    result = seed_module.scaffold(
-        project_dir=args.directory or os.getcwd(),
-        goal=args.goal or "Task harness",
-        name=args.name,
-        force=args.force,
-    )
+    if args.file:
+        result = seed_module.scaffold_file(
+            project_dir=args.directory or os.getcwd(),
+            file_path=args.file,
+            goal=args.goal or "Task harness",
+            name=args.name,
+        )
+    else:
+        result = seed_module.scaffold(
+            project_dir=args.directory or os.getcwd(),
+            goal=args.goal or "Task harness",
+            name=args.name,
+            force=args.force,
+            template=args.template,
+        )
     if result["status"] == "exists":
         print("{} 已存在，未覆盖（--force 可重建）: {}".format(WARN, result["path"]))
     else:
@@ -358,6 +372,129 @@ def cmd_seed(args: argparse.Namespace) -> int:
         copied = _copy_to_clipboard(result["prompt"])
         print("")
         print("{} 已复制到剪贴板".format(OK) if copied else "{} 复制失败".format(WARN))
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    from . import attempts as attempts_module
+
+    summary = attempts_module.summarize(days=args.days)
+    total = summary["total"]
+    if not total["sends"]:
+        print("{} 还没有尝试记录（跑一次 auto 后就有了）".format(WARN))
+        return 0
+
+    rate = total["refusals"] / total["sends"]
+    print("== 尝试统计（最近 {}）==".format("{} 天".format(args.days) if args.days else "全部"))
+    print("发送 {} 次 | 拒绝 {} 次（{:.0%}）| 超时 {} | 花费 {:.4f}".format(
+        total["sends"], total["refusals"], rate, total["timeouts"], total["cost"]
+    ))
+    print("")
+    print("按模型:")
+    for model, entry in sorted(
+        summary["models"].items(), key=lambda item: -item[1]["sends"]
+    ):
+        print("  {:<28} 发送 {:>3}  拒绝 {:>3}（{:.0%}）".format(
+            model, entry["sends"], entry["refusals"], entry["refusal_rate"]
+        ))
+    print("")
+    print("按阶段:")
+    for stage, entry in sorted(summary["stages"].items()):
+        print("  {:<10} 发送 {:>3}  拒绝 {:>3}（{:.0%}）".format(
+            stage, entry["sends"], entry["refusals"], entry["refusal_rate"]
+        ))
+    return 0
+
+
+def cmd_prime(args: argparse.Namespace) -> int:
+    from . import prime as prime_module
+
+    try:
+        result = prime_module.create_primed_session(
+            project_dir=args.directory or os.getcwd(),
+            examples=args.examples,
+            ask=args.ask,
+            db_path=args.db,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("{} 创建预热会话失败: {}".format(FAIL, exc))
+        return 1
+
+    print("{} 已创建预热会话: {}".format(OK, result["session_id"]))
+    print("   目录: {}".format(result["directory"]))
+    print("   消息: {} 条（示例 {} 对{}）".format(
+        result["messages"], args.examples,
+        " + 你的请求" if args.ask else "",
+    ))
+    print("")
+    print("继续方式：")
+    print("  Desktop: 打开该目录即可看到该会话")
+    print("  CLI:     opencode run --dir <目录> -s {} \"<你的请求>\"".format(result["session_id"]))
+    return 0
+
+
+def cmd_vibe(args: argparse.Namespace) -> int:
+    """一句话目标 -> 全自动跑完（seed 骨架 + 全阶段 + 自动清理重试）。"""
+    from . import auto as auto_module
+    from . import seed as seed_module
+
+    goal = args.goal
+    template = args.template or seed_module.pick_template(goal)
+    models = [item.strip() for item in args.models.split(",")] if args.models else None
+
+    print("== vibe 模式 ==")
+    print("目标: {}".format(goal))
+    print("模板: {}".format(template))
+    print("模型: {}".format(", ".join(models) if models else "配置默认"))
+    print("")
+
+    try:
+        result = auto_module.run_auto(
+            project_dir=args.project or os.getcwd(),
+            goal=goal,
+            stages=[item.strip() for item in args.stages.split(",")] if args.stages else None,
+            models=models,
+            max_attempts=args.max_attempts,
+            max_sends=args.max_sends,
+            timeout=args.timeout,
+            dry_run=args.dry_run,
+            seed=True,
+            seed_template=template,
+            prime=args.prime,
+            prefill_mode=args.prefill,
+            crescendo=not args.no_crescendo,
+            on_event=lambda line: print(line, flush=True),
+        )
+    except KeyboardInterrupt:
+        print("")
+        print("{} 已中断".format(WARN))
+        return 130
+
+    print("")
+    if result.get("dry_run"):
+        for key, value in result["plan"].items():
+            print("{}: {}".format(key, value))
+        return 0
+
+    if result["ok"]:
+        print("{} vibe 完成：{} 次发送，花费 {:.4f}".format(
+            OK, result["sends"], result["cost"]
+        ))
+        if result.get("session_id"):
+            print("   会话: {}（Desktop 打开项目即可继续）".format(result["session_id"]))
+        return 0
+
+    print("{} 中止: {}".format(FAIL, result["reason"]))
+    print("   已发送 {} 次，花费 {:.4f}".format(result["sends"], result["cost"]))
+    if result.get("session_id"):
+        print("   会话: {}（可换模型重试）".format(result["session_id"]))
+    return 1
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    from . import web
+
+    web.serve(host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 
 
@@ -412,6 +549,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_clean.add_argument("--replacement", help="自定义替换文本")
     p_clean.add_argument("--clean-reasoning", action="store_true", help="同时移除 thinking/reasoning 内容")
     p_clean.add_argument("--db", help="指定 OpenCode 数据库路径（默认 ~/.local/share/opencode/opencode.db）")
+    p_clean.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源：template 模板 / auto 由 LLM 生成")
     p_clean.set_defaults(func=cmd_clean)
 
     p_restore = sub.add_parser("restore", help="列出/恢复数据库备份")
@@ -423,7 +561,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed = sub.add_parser("seed", help="生成半成品代码文件（补全 TODO 模式）")
     p_seed.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
     p_seed.add_argument("--goal", required=True, help="任务目标，写入文件 docstring")
-    p_seed.add_argument("--name", help="模块名（默认 task_harness）")
+    p_seed.add_argument("--name", help="模块名（默认取模板名）")
+    p_seed.add_argument("--template", choices=["harness", "web", "binary", "doc"],
+                        default="harness", help="模板类型（默认 harness）")
+    p_seed.add_argument("--file", help="在真实文件里追加 TODO 块（JAWS-1 模式）")
     p_seed.add_argument("--force", action="store_true", help="已存在时重建")
     p_seed.add_argument("--copy", action="store_true", help="复制补全提示到剪贴板")
     p_seed.set_defaults(func=cmd_seed)
@@ -438,7 +579,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数（默认 900）")
     p_auto.add_argument("--dry-run", action="store_true", help="只打印计划")
     p_auto.add_argument("--seed", action="store_true", help="先生成半成品文件，用补全 TODO 作为第一轮")
+    p_auto.add_argument("--seed-template", choices=["harness", "web", "binary", "doc"],
+                        default="harness", help="seed 使用的模板")
+    p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
+    p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
+    p_auto.add_argument("--prime", type=int, default=0, help="先创建 N 对示例的预热会话（many-shot）")
     p_auto.set_defaults(func=cmd_auto)
+
+    p_prime = sub.add_parser("prime", help="创建预热会话（many-shot 示例历史）")
+    p_prime.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
+    p_prime.add_argument("--examples", type=int, default=3, help="示例问答对数（默认 3，最多 4）")
+    p_prime.add_argument("--ask", help="在预热历史末尾附上你的请求")
+    p_prime.add_argument("--db", help="指定 OpenCode 数据库路径")
+    p_prime.set_defaults(func=cmd_prime)
+
+    p_web = sub.add_parser("web", help="启动本地 Web UI（浏览器操作，无需命令）")
+    p_web.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，仅本机）")
+    p_web.add_argument("--port", type=int, default=8788, help="端口（默认 8788）")
+    p_web.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    p_web.set_defaults(func=cmd_web)
+
+    p_vibe = sub.add_parser("vibe", help="一句话目标：自动 seed + 全阶段推进 + 清理重试")
+    p_vibe.add_argument("goal", help="自然语言目标（写进半成品文件，不直接发给模型）")
+    p_vibe.add_argument("--project", help="项目目录（默认当前目录）")
+    p_vibe.add_argument("--template", choices=["harness", "web", "binary", "doc"],
+                        help="骨架模板（默认按目标自动选择）")
+    p_vibe.add_argument("--models", help="逗号分隔的模型轮换表")
+    p_vibe.add_argument("--prime", type=int, default=0, help="预热示例对数（many-shot）")
+    p_vibe.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源")
+    p_vibe.add_argument("--stages", help="逗号分隔的阶段（默认全部 5 个）")
+    p_vibe.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出")
+    p_vibe.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数")
+    p_vibe.add_argument("--max-sends", type=int, default=30, help="总发送上限")
+    p_vibe.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数")
+    p_vibe.add_argument("--dry-run", action="store_true", help="只打印计划")
+    p_vibe.set_defaults(func=cmd_vibe)
+
+    p_report = sub.add_parser("report", help="尝试统计：模型/阶段的发送与拒绝率")
+    p_report.add_argument("--days", type=int, help="只看最近 N 天")
+    p_report.set_defaults(func=cmd_report)
 
     p_watch = sub.add_parser("watch", help="后台监视并自动清理新拒绝（Desktop 用）")
     p_watch.add_argument("--project", help="只监视该目录的项目（默认全部）")

@@ -22,6 +22,7 @@ def watch(
     detector: Optional[RefusalDetector] = None,
     on_event: Optional[Callable[[str], None]] = None,
     sleep: Callable[[float], None] = time.sleep,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """轮询数据库，发现新的拒绝就替换。
 
@@ -44,6 +45,8 @@ def watch(
     now = time.time()
 
     while True:
+        if should_stop and should_stop():
+            return {"scans": scans, "cleaned": cleaned, "errors": errors}
         scans += 1
         try:
             sessions = adapter.list_sessions()
@@ -95,6 +98,8 @@ def watch(
         if once:
             return {"scans": scans, "cleaned": cleaned, "errors": errors}
         sleep(interval)
+        if should_stop and should_stop():
+            return {"scans": scans, "cleaned": cleaned, "errors": errors}
 
 
 def watch_forever(**kwargs: Any) -> Dict[str, Any]:

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>speakfreely</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --ok: #3ecf8e; --warn: #f0b429; --err: #ef5b5b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+         font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px;
+           border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 14px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
+  main { display: grid; grid-template-columns: clamp(400px, 33%, 560px) minmax(0, 1fr); gap: 14px; padding: 14px;
+         height: calc(100vh - 48px); overflow: hidden; align-items: stretch; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+           padding: 14px 14px 26px; height: 100%; overflow-y: auto; overflow-x: hidden; }
+  .panel.left { display: flex; flex-direction: column; padding-bottom: 14px; }
+  .panel.right { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 14px; }
+  .panel.left > * { flex: 0 0 auto; }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 3px; }
+  label:first-child { margin-top: 0; }
+  input, textarea, button { width: 100%; background: #0d1016; color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; }
+  textarea { height: 120px; min-height: 120px; resize: none; overflow-y: auto; }
+  button { cursor: pointer; border-color: #33405a; background: #1b2331; }
+  button:hover { background: #223048; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.danger { border-color: #5a3333; background: #2a1a1a; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row > * { flex: 1; }
+  .muted { color: var(--muted); font-size: 12px; }
+
+  /* 自定义下拉：菜单固定出现在控件正下方 */
+  .dd { position: relative; }
+  .dd-btn { text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .dd-btn::after { content: "▾"; color: var(--muted); font-size: 11px; }
+  .dd-input { width: 100%; }
+  .dd-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+             background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
+             max-height: 300px; overflow: auto; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .dd-item { padding: 7px 10px; cursor: pointer; font-size: 13px; display: flex;
+             align-items: baseline; gap: 8px; }
+  .dd-item .item-main { flex: 1 1 auto; min-width: 0; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .dd-item .item-sub { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+  .dd-item:hover, .dd-item.active { background: #1b2331; }
+  .dd-item .sub { color: var(--muted); font-size: 11px; margin-left: 6px; }
+  .dd-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
+
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-size: 13px; }
+  .checks label { margin: 0; display: flex; align-items: center; gap: 5px; color: var(--text); cursor: help; }
+  .checks input { width: auto; }
+  .checks .en { color: var(--muted); font-size: 11px; }
+
+  /* 全局单例 tooltip：挂在 body、position:fixed，不受父容器裁剪/不撑滚动条 */
+  #tooltip { position: fixed; z-index: 9999; pointer-events: none; max-width: 360px;
+    background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; box-shadow: 0 10px 28px rgba(0,0,0,.5);
+    color: var(--text); font-size: 12px; line-height: 1.55; }
+  .tutorial { flex: 1 1 auto; min-height: 100px; overflow-y: auto; margin-top: 14px;
+              border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+  .tutorial h3 { margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
+  .tutorial h3:first-child { margin-top: 0; }
+  .tutorial ol, .tutorial ul { margin: 6px 0; padding-left: 20px; }
+  .tutorial li { margin: 4px 0; }
+  .tutorial code { background: #0d1016; border: 1px solid var(--border); border-radius: 4px;
+                   padding: 1px 5px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .tutorial .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  #log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+         background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+         flex: 0 1 auto; height: 320px; min-height: 160px; overflow-y: auto; overflow-x: hidden; }
+  /* 常显滚动条（macOS 默认悬浮隐藏） */
+  #log, .panel, .dd-menu, #preview, textarea, .tutorial, .modal-body { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
+  #log::-webkit-scrollbar, .panel::-webkit-scrollbar, .dd-menu::-webkit-scrollbar, .tutorial::-webkit-scrollbar,
+  #preview::-webkit-scrollbar, textarea::-webkit-scrollbar { width: 10px; }
+  #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track, .tutorial::-webkit-scrollbar-track,
+  #preview::-webkit-scrollbar-track, textarea::-webkit-scrollbar-track { background: #0b0e13; border-radius: 8px; }
+  #log::-webkit-scrollbar-thumb, .panel::-webkit-scrollbar-thumb, .dd-menu::-webkit-scrollbar-thumb, .tutorial::-webkit-scrollbar-thumb,
+  #preview::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb {
+    background: #39435a; border-radius: 8px; border: 2px solid #0b0e13; }
+  #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover, .tutorial::-webkit-scrollbar-thumb:hover,
+  #preview::-webkit-scrollbar-thumb:hover, textarea::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
+  #preview { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;
+             flex: 1 1 auto; min-height: 48px; overflow: auto; }
+  .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px;
+         cursor: pointer; transition: background 0.15s; }
+  .msg:hover { background: #1a2130; }
+  .msg .hint { float: right; color: var(--muted); font-size: 11px; }
+  .msg .msg-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 消息详情模态框 */
+  #modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .55);
+           display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #modal[hidden] { display: none; }
+  .modal-card { width: min(880px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+                background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+                box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .modal-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+                border-bottom: 1px solid var(--border); }
+  .modal-head .title { font-weight: 600; }
+  .modal-head .close { width: auto; margin-left: auto; padding: 4px 10px; }
+  .modal-body { overflow: auto; padding: 14px; white-space: pre-wrap; word-break: break-word;
+                font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .msg.user { border-left: 3px solid #3a4b6b; }
+  .msg.assistant { border-left: 3px solid #2f4a3a; }
+  .msg.refusal { border-left-color: var(--err); background: #1d1416; }
+  .msg .role { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+           background: #33202a; color: var(--err); margin-left: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>speakfreely</h1>
+  <div class="status">
+    <span id="st-opencode"></span>
+    <span id="st-prompt"></span>
+    <span id="st-watch"></span>
+  </div>
+</header>
+
+<main>
+  <section class="panel left">
+    <label>项目</label>
+    <div class="dd" id="dd-project">
+      <button type="button" class="dd-btn">加载中…</button>
+      <div class="dd-menu" hidden></div>
+    </div>
+
+    <label>会话</label>
+    <div class="dd" id="dd-session">
+      <button type="button" class="dd-btn">新建会话（自动全流程）</button>
+      <div class="dd-menu" hidden></div>
+    </div>
+    <div id="preview" class="muted" style="margin-top:8px">选择会话后显示最近消息</div>
+
+    <label>模型</label>
+    <div class="dd filterable" id="dd-model">
+      <input class="dd-input" placeholder="默认（点击选择，可输入过滤）" autocomplete="off" />
+      <div class="dd-menu" hidden></div>
+    </div>
+
+    <label>目标 / 消息</label>
+    <textarea id="goal" placeholder="一句话说明你要做什么。新会话：写进半成品文件后自动跑全流程；已有会话：直接作为消息发送。"></textarea>
+
+    <label>阶段（新会话模式，鼠标悬浮看说明）</label>
+    <div class="checks" id="stages"></div>
+
+    <div class="row">
+      <label style="margin:0">预热示例 <input id="prime" type="number" value="0" min="0" max="4" /></label>
+      <label style="margin:0">替换文案
+        <select id="prefill" style="width:100%;background:#0d1016;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">
+          <option value="">默认</option>
+          <option value="template">模板</option>
+          <option value="auto">LLM 生成</option>
+        </select>
+      </label>
+    </div>
+    <div class="checks" style="margin-top:10px">
+      <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="btn-run">▶ 运行</button>
+      <button id="btn-dry">预览计划</button>
+    </div>
+    <div class="row">
+      <button id="btn-clean" class="danger">清理会话</button>
+      <button id="btn-watch">watch</button>
+      <button id="btn-refresh">刷新</button>
+    </div>
+  </section>
+
+  <section class="panel right">
+    <label>运行日志</label>
+    <div id="log">就绪。选项目 → 选会话（或新建）→ 选模型 → 输入目标 → 运行。</div>
+
+    <div class="tutorial">
+      <h3>快速上手</h3>
+      <ol>
+        <li>左侧依次选择 <b>项目 → 会话 → 模型</b>（模型可留空，用 OpenCode 默认）</li>
+        <li>在输入框写下目标或消息，点 <b>▶ 运行</b></li>
+        <li>日志实时滚动，完成后到项目目录的 <code>tools/</code>、<code>evidence/</code> 看产物</li>
+      </ol>
+
+      <h3>两种模式</h3>
+      <ul>
+        <li><b>新建会话（默认）</b>：目标写进一个半成品文件，AI 当作"补全代码"来做，自动跑
+          <b>侦察 → 枚举 → 分析 → 验证 → 取证</b> 五个阶段
+          <span class="note">这就是为什么推荐用"梳理 X 的流程并整理证据"这种工程化说法</span></li>
+        <li><b>已有会话</b>：输入直接作为消息发进该会话；被 AI 拒绝时，自动把拒绝替换成
+          "继续…" 再重试 <span class="note">最多 3 次，仍失败就换个模型重试</span></li>
+      </ul>
+
+      <h3>被拒了怎么办</h3>
+      <ul>
+        <li>点 <b>清理该会话</b>：扫描该会话里的拒绝回复并替换（自动整库备份）</li>
+        <li>点 <b>开启 watch</b>：放到后台轮询，产出新拒绝自动替换；之后在 Desktop 里发"继续"即可</li>
+        <li>想回滚：终端跑 <code>./scripts/speakfreely restore</code></li>
+      </ul>
+
+      <h3>小贴士</h3>
+      <ul>
+        <li>五个阶段鼠标悬浮有说明；不想跑全流程就取消勾选要跳过的阶段</li>
+        <li>不同模型的拒审阈值差别很大——连续被拒时，<b>换模型比改提示词有效</b></li>
+        <li>"预热示例"会在会话前注入几对示例问答（many-shot），可选</li>
+        <li>"替换文案 = LLM 生成"需要先在 <code>~/.config/speakfreely/config.json</code> 配好模型</li>
+      </ul>
+
+      <h3>命令行的等价操作</h3>
+      <ul>
+        <li><code>speakfreely vibe "目标" --project …</code>：本页"新建会话"的全自动版本</li>
+        <li><code>speakfreely watch --project …</code>：本页的 watch 开关</li>
+        <li><code>speakfreely report</code>：看各模型的拒绝率与花费</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div id="tooltip" hidden></div>
+
+<div id="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="title" id="modal-title">消息详情</span>
+      <button class="close" id="modal-close">关闭 ✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { watching: [], timer: null };
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function log(text) {
+  const el = $("log");
+  el.textContent += "\n" + text;
+  el.scrollTop = el.scrollHeight;
+}
+function esc(text) {
+  return String(text).replace(/[<>&"']/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ── 全局 tooltip：即时显示、body 级、fixed 定位 ─────────────────────── */
+const tooltipEl = () => document.getElementById("tooltip");
+function hideTooltip() {
+  const el = tooltipEl();
+  if (el) el.hidden = true;
+}
+function showTooltip(text, target) {
+  const el = tooltipEl();
+  if (!el || !text) return;
+  el.textContent = text;
+  el.hidden = false;
+  const rect = target.getBoundingClientRect();
+  const tip = el.getBoundingClientRect();
+  let top = rect.top - tip.height - 6;
+  if (top < 4) top = rect.bottom + 6;                       // 上方放不下就放下方
+  if (top + tip.height > window.innerHeight - 4) {
+    top = Math.max(4, window.innerHeight - tip.height - 4);
+  }
+  let left = Math.max(4, Math.min(rect.left, window.innerWidth - tip.width - 8));
+  el.style.top = top + "px";
+  el.style.left = left + "px";
+}
+function bindTooltips(root) {
+  (root || document).querySelectorAll("[data-tip]").forEach((node) => {
+    if (node.dataset.tipBound) return;
+    node.dataset.tipBound = "1";
+    node.addEventListener("mouseenter", () => showTooltip(node.dataset.tip, node));
+    node.addEventListener("mouseleave", hideTooltip);
+    node.addEventListener("click", hideTooltip);
+  });
+}
+document.addEventListener("scroll", hideTooltip, true);
+window.addEventListener("resize", hideTooltip);
+
+/* ── 自定义下拉组件：菜单固定显示在控件正下方 ─────────────────────────── */
+function Dropdown(rootId, { placeholder, filterable, onChange }) {
+  const root = $(rootId);
+  const trigger = root.querySelector(filterable ? ".dd-input" : ".dd-btn");
+  const menu = root.querySelector(".dd-menu");
+  let items = [];
+  let value = "";
+  let label = placeholder || "";
+
+  function paint() {
+    if (!filterable) trigger.textContent = label || placeholder || "请选择";
+    else trigger.placeholder = label || placeholder || "";
+  }
+  function render(filter) {
+    const needle = (filter || "").toLowerCase();
+    const shown = items.filter((item) => !needle || item.value.toLowerCase().includes(needle) || (item.label || "").toLowerCase().includes(needle));
+    if (!shown.length) {
+      menu.innerHTML = `<div class="dd-empty">没有匹配项</div>`;
+      return;
+    }
+    menu.innerHTML = shown.map((item) => {
+      const main = esc(item.label || item.value);
+      const sub = item.sub ? esc(item.sub) : "";
+      const full = sub ? `${main} · ${sub}` : main;
+      return `<div class="dd-item${item.value === value ? " active" : ""}"
+                   data-value="${esc(item.value)}" data-tip="${full}">
+                <span class="item-main">${main}</span>${sub ? `<span class="item-sub">${sub}</span>` : ""}
+              </div>`;
+    }).join("");
+    bindTooltips(menu);
+    menu.querySelectorAll(".dd-item").forEach((node) => {
+      node.addEventListener("click", () => {
+        hideTooltip();
+        select(node.dataset.value);
+        close();
+      });
+    });
+  }
+  function open() {
+    menu.hidden = false;
+    render(filterable ? trigger.value : "");
+  }
+  function close() { menu.hidden = true; }
+  function select(next) {
+    const item = items.find((entry) => entry.value === next);
+    value = next;
+    label = item ? (item.label || item.value) : next;
+    if (filterable) trigger.value = value === next && item ? item.value : trigger.value;
+    paint();
+    if (onChange) onChange(value);
+  }
+  function setItems(next, keepValue) {
+    items = next || [];
+    if (!keepValue) { value = ""; label = placeholder || ""; if (filterable) trigger.value = ""; }
+    paint();
+  }
+  function setValue(next) { select(next); }
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    menu.hidden ? open() : close();
+  });
+  if (filterable) {
+    trigger.addEventListener("focus", open);
+    trigger.addEventListener("input", () => { canvasFilter(); open(); });
+  }
+  function canvasFilter() {
+    // 输入过滤时，值以输入框内容为准（允许自由输入任意模型名）
+    value = trigger.value;
+    if (onChange) onChange(value);
+  }
+  document.addEventListener("click", (event) => {
+    if (!root.contains(event.target)) close();
+  });
+  paint();
+  return { setItems, setValue, getValue: () => (filterable ? trigger.value : value), close };
+}
+
+const projectDD = Dropdown("dd-project", {
+  placeholder: "请选择项目",
+  onChange: () => loadSessions(),
+});
+const sessionDD = Dropdown("dd-session", {
+  placeholder: "新建会话（自动全流程）",
+  onChange: () => { updateRunButton(); loadPreview(); },
+});
+const modelDD = Dropdown("dd-model", {
+  placeholder: "默认（点击选择，可输入过滤）",
+  filterable: true,
+});
+
+/* ── 数据加载 ─────────────────────────────────────────────────────────── */
+async function loadStatus() {
+  try {
+    const s = await api("/api/status");
+    $("st-opencode").innerHTML = `<span class="dot ${s.opencode ? "ok" : "bad"}"></span>opencode ${s.opencode ? "已找到" : "未找到"}`;
+    $("st-prompt").innerHTML = `<span class="dot ${s.global_prompt.exists ? "ok" : "bad"}"></span>全局提示词`;
+    state.watching = s.watch || [];
+    updateWatchButton();
+  } catch (e) { log("状态获取失败: " + e.message); }
+}
+
+async function loadProjects() {
+  const projects = await api("/api/projects");
+  projectDD.setItems(projects.map((p) => ({
+    value: p.directory,
+    label: p.directory,
+    sub: `${p.sessions} 个会话`,
+  })));
+  if (projects.length) projectDD.setValue(projects[0].directory);
+}
+
+async function loadSessions() {
+  const project = projectDD.getValue();
+  if (!project) return;
+  const sessions = await api("/api/sessions?project=" + encodeURIComponent(project));
+  sessionDD.setItems([
+    { value: "", label: "新建会话（自动全流程）" },
+    ...sessions.map((s) => ({ value: s.id, label: s.title, sub: s.updated })),
+  ]);
+  sessionDD.setValue("");
+  $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。";
+  updateWatchButton();
+}
+
+async function loadModels() {
+  try {
+    const models = await api("/api/models");
+    modelDD.setItems(models.map((m) => ({ value: m, label: m })));
+  } catch (e) { log("模型列表获取失败: " + e.message); }
+}
+
+async function loadStages() {
+  const stages = await api("/api/stages");
+  $("stages").innerHTML = stages.map((s, index) =>
+    `<label data-tip="${esc(s.description)}">
+       <input type="checkbox" value="${esc(s.key)}" ${index < 5 ? "checked" : ""}>
+       ${esc(s.name)} <span class="en">${esc(s.key)}</span>
+     </label>`).join("");
+  bindTooltips($("stages"));
+}
+
+let previewToken = 0;
+async function loadPreview() {
+  const id = sessionDD.getValue();
+  if (!id) { $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。"; return; }
+  const token = ++previewToken;
+  $("preview").textContent = "加载中…";
+  const data = await api("/api/session?id=" + encodeURIComponent(id));
+  if (token !== previewToken) return;
+  const badge = data.refusals ? `<span class="badge">${data.refusals} 处拒绝</span>` : "";
+  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.shown} 条对话消息（总计 ${data.total} 条，含工具/推理）${badge}（点击查看完整内容）</div>` +
+    data.messages.map((m) =>
+      `<div class="msg ${m.refusal ? "refusal" : m.role}" data-index="${m.index}">
+         <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}<span class="hint">点击查看 →</span></div>
+         <div class="msg-text">${esc(m.text)}</div>
+       </div>`).join("");
+  $("preview").querySelectorAll(".msg[data-index]").forEach((node) => {
+    node.addEventListener("click", () => showMessage(sessionDD.getValue(), node.dataset.index));
+  });
+}
+
+/* ── 消息详情模态框 ─────────────────────────────────────────────────── */
+async function showMessage(session, index) {
+  const modal = $("modal");
+  $("modal-title").textContent = "消息详情（加载中…）";
+  $("modal-body").textContent = "";
+  modal.hidden = false;
+  try {
+    const data = await api(`/api/message?id=${encodeURIComponent(session)}&index=${index}`);
+    const flag = data.refusal ? " · 拒绝" : "";
+    $("modal-title").textContent = `#${data.index} · ${data.role}${flag} · ${data.text.length} 字符`;
+    $("modal-body").textContent = data.text || data.display || "(空消息)";
+    $("modal-body").scrollTop = 0;
+  } catch (e) {
+    $("modal-title").textContent = "加载失败";
+    $("modal-body").textContent = e.message;
+  }
+}
+function closeModal() { $("modal").hidden = true; }
+$("modal-close").addEventListener("click", closeModal);
+$("modal").addEventListener("click", (event) => { if (event.target === $("modal")) closeModal(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
+
+function updateRunButton() {
+  $("btn-run").textContent = sessionDD.getValue() ? "▶ 发送到该会话" : "▶ 运行全流程";
+}
+function selectedStages() {
+  return Array.from(document.querySelectorAll("#stages input:checked")).map((i) => i.value);
+}
+
+/* ── 动作 ─────────────────────────────────────────────────────────────── */
+async function run(dryRun) {
+  const goal = $("goal").value.trim();
+  if (!goal) { log("请先输入目标"); return; }
+  const session = sessionDD.getValue();
+  const payload = {
+    mode: session ? "send" : "vibe",
+    project: projectDD.getValue(),
+    session: session || null,
+    model: modelDD.getValue().trim(),
+    goal: goal,
+    stages: session ? null : (selectedStages().join(",") || null),
+    prime: parseInt($("prime").value || "0", 10),
+    prefill: $("prefill").value || null,
+    dry_run: !!dryRun,
+  };
+  log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);
+  const { job } = await api("/api/run", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  pollJob(job);
+}
+function pollJob(id) {
+  clearInterval(state.timer);
+  state.timer = setInterval(async () => {
+    const job = await api("/api/job?id=" + id);
+    const el = $("log");
+    el.textContent = `=== 任务 ${id} ===\n` + job.log.join("\n");
+    el.scrollTop = el.scrollHeight;
+    if (job.status !== "running") {
+      clearInterval(state.timer);
+      if (job.status === "error") log("失败: " + (job.result?.error || ""));
+      else if (job.result?.ok === false) log("未完成: " + (job.result?.reason || ""));
+      else log("完成");
+    }
+  }, 1000);
+}
+
+async function cleanSession() {
+  const session = sessionDD.getValue();
+  if (!session) { log("请先选择要清理的会话"); return; }
+  const result = await api("/api/clean", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session, dry_run: false }),
+  });
+  const entry = (result.sessions || [])[0] || {};
+  log(`\n=== 清理 ${session} ===`);
+  log(entry.error ? "失败: " + entry.error
+    : `修改: ${entry.modified ? entry.changes.join("; ") : "无需修改"}${entry.backup ? " | 备份: " + entry.backup : ""}`);
+  loadPreview();
+}
+
+function updateWatchButton() {
+  const project = projectDD.getValue();
+  const on = state.watching.includes(project);
+  $("btn-watch").textContent = on ? "停止 watch" : "开启 watch";
+  $("btn-watch").classList.toggle("primary", on);
+}
+async function toggleWatch() {
+  const project = projectDD.getValue();
+  if (!project) { log("请先选择项目"); return; }
+  const action = state.watching.includes(project) ? "stop" : "start";
+  const res = await api("/api/watch", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, action }),
+  });
+  log(`watch ${action}: ${res.status}`);
+  await loadStatus();
+  setTimeout(loadStatus, 1200);
+}
+
+$("btn-run").addEventListener("click", () => run(false));
+$("btn-dry").addEventListener("click", () => run(true));
+$("btn-clean").addEventListener("click", cleanSession);
+$("btn-watch").addEventListener("click", toggleWatch);
+$("btn-refresh").addEventListener("click", async () => { await loadStatus(); await loadProjects(); await loadModels(); log("已刷新"); });
+
+(async function init() {
+  await loadStatus();
+  await loadStages();
+  await loadProjects();
+  await loadModels();
+  updateRunButton();
+  setInterval(loadStatus, 15000);
+})();
+</script>
+</body>
+</html>
