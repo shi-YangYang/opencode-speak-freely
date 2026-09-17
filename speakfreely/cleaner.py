@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from . import config as config_module
 from . import judge as judge_module
+from . import prefill as prefill_module
 from . import workflow
 from .core import (
     DEFAULT_OPENCODE_DB,
@@ -39,6 +40,33 @@ def _change_line(change: Any) -> str:
         "remove_thinking": "移除 thinking 块",
     }.get(change.change_type, change.change_type)
     return "第 {} 行 {}".format(change.line_num, kind)
+
+
+def _context_for_prefill(
+    messages: List[Dict[str, Any]], detector: RefusalDetector
+) -> tuple:
+    """取最近一条用户消息 + 第一条拒绝文本，供 prefill 生成使用。"""
+    strategy = OpenCodeFormat()
+    last_user = ""
+    refusal_text = ""
+
+    for message in messages:
+        role = message.get("type")
+        content = message.get("message", {}).get("content", [])
+        if role == "user":
+            texts = [
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            ]
+            if texts:
+                last_user = "\n".join(texts)
+        elif role == "assistant" and not refusal_text:
+            text = strategy.extract_text_content(message)
+            if text and detector.detect(text):
+                refusal_text = text
+
+    return last_user, refusal_text
 
 
 def _judge_pass(
@@ -85,6 +113,8 @@ def clean_opencode(
     db_path: Optional[str] = None,
     use_judge: bool = True,
     judge: Any = None,
+    prefill_mode: Optional[str] = None,
+    prefill_fn: Any = None,
 ) -> Dict[str, Any]:
     """清理 OpenCode 会话中被拒的助手消息。
 
@@ -99,6 +129,9 @@ def clean_opencode(
     detector = RefusalDetector(config.get("keywords") or {})
     if judge is None and use_judge:
         judge = judge_module.from_config(config)
+
+    if prefill_fn is None:
+        prefill_fn = prefill_module.from_config(config, mode=prefill_mode)
 
     adapter = OpenCodeDBAdapter(db_path or DEFAULT_OPENCODE_DB)
     try:
@@ -133,16 +166,24 @@ def clean_opencode(
             results.append(entry)
             continue
 
+        session_replacement = replacement_text
+        if prefill_fn is not None:
+            user_prompt, refusal_text = _context_for_prefill(messages, detector)
+            generated = prefill_fn.generate(user_prompt, refusal_text)
+            if generated:
+                session_replacement = generated
+                entry["prefill"] = generated
+
         cleaned, modified, changes = clean_messages(
             messages,
             detector,
-            replacement=replacement_text,
+            replacement=session_replacement,
             clean_reasoning=clean_reasoning,
             show_content=show_content,
         )
         if judge is not None:
             judged, judged_changes = _judge_pass(
-                cleaned, detector, judge, replacement_text, show_content=show_content
+                cleaned, detector, judge, session_replacement, show_content=show_content
             )
             if judged:
                 modified = True

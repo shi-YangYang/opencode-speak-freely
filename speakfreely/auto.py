@@ -10,11 +10,27 @@ from typing import Any, Callable, Dict, List, Optional
 from . import cleaner as cleaner_module
 from . import config as config_module
 from . import judge as judge_module
+from . import prefill as prefill_module
 from . import workflow
 from .core import OpenCodeDBAdapter, RefusalDetector
 from .runner import run_open
 
 DEFAULT_RETRY_PROMPT = "继续"
+
+SUMMARY_LIMIT = 400
+
+
+def _summarize(text: str, limit: int = SUMMARY_LIMIT) -> str:
+    """把上一轮产出压成摘要（优先在句末截断）。"""
+    compact = " ".join((text or "").split())
+    if len(compact) <= limit:
+        return compact
+    window = compact[:limit]
+    for separator in ("。", ".", "\n", "；", ";"):
+        index = window.rfind(separator)
+        if index > limit // 2:
+            return window[: index + 1]
+    return window + "…"
 
 
 def _default_clean_fn(session_id: str, replacement: str, db_path: Optional[str]) -> Dict[str, Any]:
@@ -61,6 +77,9 @@ def run_auto(
     seed: bool = False,
     seed_name: Optional[str] = None,
     judge: Any = None,
+    prefill_fn: Any = None,
+    prefill_mode: Optional[str] = None,
+    crescendo: bool = True,
 ) -> Dict[str, Any]:
     """按工作流阶段自动推进，被拒时自动清理并重试。
 
@@ -71,8 +90,11 @@ def run_auto(
     runner = runner or run_open
     clean_fn = clean_fn or _default_clean_fn
     detector = detector or RefusalDetector()
+    config = config_module.load_config()
     if judge is None:
-        judge = judge_module.from_config(config_module.load_config())
+        judge = judge_module.from_config(config)
+    if prefill_fn is None:
+        prefill_fn = prefill_module.from_config(config, mode=prefill_mode)
 
     def emit(message: str) -> None:
         if on_event:
@@ -125,6 +147,7 @@ def run_auto(
     session_id: Optional[str] = None
     sends = 0
     total_cost = 0.0
+    last_summary = ""
     stage_reports: List[Dict[str, Any]] = []
 
     for stage_index, stage in enumerate(stage_defs, 1):
@@ -134,6 +157,8 @@ def run_auto(
             prompt = stage["request"]
             if goal and stage_index == 1:
                 prompt = "目标：{}\n\n{}".format(goal, prompt)
+            if crescendo and last_summary:
+                prompt = "上一轮你已完成（摘要）：{}\n\n{}".format(last_summary, prompt)
 
         report = {
             "stage": stage["key"],
@@ -192,6 +217,7 @@ def run_auto(
                     refused = True
             if not refused:
                 emit("[{}] 完成（{} 字符）".format(stage["key"], len(output_text)))
+                last_summary = _summarize(output_text)
                 break
 
             emit("[{}] 检测到拒绝，清理会话后重试".format(stage["key"]))
@@ -200,7 +226,13 @@ def run_auto(
                 report["session_id"] = session_id
 
             if session_id:
-                clean_result = clean_fn(session_id, stage["replacement"], db_path)
+                replacement_for_clean = stage["replacement"]
+                if prefill_fn is not None:
+                    generated = prefill_fn.generate(prompt, output_text)
+                    if generated:
+                        replacement_for_clean = generated
+                        emit("    已生成内容感知 prefill")
+                clean_result = clean_fn(session_id, replacement_for_clean, db_path)
                 entry = (clean_result.get("sessions") or [{}])[0]
                 if entry.get("backup"):
                     emit("    已备份: {}".format(entry["backup"]))

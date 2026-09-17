@@ -192,6 +192,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
             replacement=args.replacement,
             stage=args.stage,
             db_path=args.db,
+            prefill_mode=args.prefill,
         )
     except Exception as exc:  # noqa: BLE001 - 顶层命令需要把错误变成可读输出
         if os.environ.get("SPEAKFREELY_DEBUG"):
@@ -274,6 +275,8 @@ def cmd_auto(args: argparse.Namespace) -> int:
             timeout=args.timeout,
             dry_run=args.dry_run,
             seed=args.seed,
+            prefill_mode=args.prefill,
+            crescendo=not args.no_crescendo,
             on_event=lambda line: print(line, flush=True),
         )
     except KeyboardInterrupt:
@@ -412,6 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_clean.add_argument("--replacement", help="自定义替换文本")
     p_clean.add_argument("--clean-reasoning", action="store_true", help="同时移除 thinking/reasoning 内容")
     p_clean.add_argument("--db", help="指定 OpenCode 数据库路径（默认 ~/.local/share/opencode/opencode.db）")
+    p_clean.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源：template 模板 / auto 由 LLM 生成")
     p_clean.set_defaults(func=cmd_clean)
 
     p_restore = sub.add_parser("restore", help="列出/恢复数据库备份")
@@ -438,6 +442,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数（默认 900）")
     p_auto.add_argument("--dry-run", action="store_true", help="只打印计划")
     p_auto.add_argument("--seed", action="store_true", help="先生成半成品文件，用补全 TODO 作为第一轮")
+    p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
+    p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
     p_auto.set_defaults(func=cmd_auto)
 
     p_watch = sub.add_parser("watch", help="后台监视并自动清理新拒绝（Desktop 用）")
