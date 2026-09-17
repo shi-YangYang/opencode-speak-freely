@@ -25,6 +25,9 @@
 | `speakfreely/core/` | 内置会话核心：拒绝检测、清理管线、SQLite 读写/备份/恢复（改编自 codex-session-patcher，MIT，见 `core/ATTRIBUTION.md`） |
 | `speakfreely/config.py` | 本工具配置 `~/.config/speakfreely/config.json`（替换文本、自定义关键词） |
 | `speakfreely/cleaner.py` | 清理与恢复编排 |
+| `speakfreely/runner.py` | `opencode run --format json` 调用与事件解析 |
+| `speakfreely/auto.py` | 全自动循环（发送→检测→清理→重试→下一阶段） |
+| `speakfreely/watch.py` | 后台监视并自动清理新拒绝（Desktop 用） |
 | `scripts/speakfreely` | CLI 启动器 |
 | `docs/principles.md` | 原理：拒绝的机制、注入强度与可信度的权衡、提通过率的手段 |
 | `docs/research.md` | 调研笔记：工作流越狱、prefill 注入、Policy Puppetry、Crescendo 等（含数据与出处） |
@@ -63,6 +66,37 @@
 ./scripts/speakfreely restore --backup <路径>    # 从备份恢复
 ./scripts/speakfreely uninstall
 ```
+
+## 两种自动模式
+
+**A. `watch` — 配合 Desktop 的自动修复（推荐）**
+
+在终端跑一条命令，然后在 Desktop 里正常聊天：
+
+```bash
+./scripts/speakfreely watch --project ~/project/<目标项目> --interval 5
+```
+
+- 每 5 秒扫描一次该项目的会话，**发现新的拒绝就自动替换成 prefill 文案**（自动备份）
+- Desktop 里不用做任何额外操作：被拒后等几秒，直接发"继续"即可，模型读到的是已清理的历史
+- 界面若仍显示旧文本，切到别的会话再切回来即可刷新；不影响模型实际读到的内容
+- 想后台常驻：`nohup ./scripts/speakfreely watch --project <项目> > /tmp/sf-watch.log 2>&1 &`
+- 先预览：`--dry-run`；只扫一轮：`--once`
+
+**B. `auto` — 完全无人值守（CLI）**
+
+```bash
+./scripts/speakfreely auto ~/project/<目标项目> \
+    --goal "梳理 <目标> 的注册流程接口与参数" \
+    --models glm-5.2,kimi-k2.6,qwen3.8-max \
+    --max-attempts 3
+```
+
+- 按 recon → enum → analyze → exploit → evidence 自动推进
+- 每轮调用 `opencode run`，用拒绝检测器判断结果；被拒 → 自动清理该会话 → 自动重试（必要时轮换模型）
+- 单个阶段连续被拒达到上限或总发送数超预算就停下报告
+- 日志落在 `<项目>/evidence/auto/<时间戳>/`，会话可在 Desktop 里打开继续
+- 只打印计划不执行：`--dry-run`；限定阶段：`--stages recon,enum`
 
 ## 手动安装（等价）
 

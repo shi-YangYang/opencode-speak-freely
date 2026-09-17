@@ -257,6 +257,85 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_auto(args: argparse.Namespace) -> int:
+    from . import auto as auto_module
+
+    stages = [item.strip() for item in args.stages.split(",")] if args.stages else None
+    models = [item.strip() for item in args.models.split(",")] if args.models else None
+
+    try:
+        result = auto_module.run_auto(
+            project_dir=args.directory or os.getcwd(),
+            goal=args.goal,
+            stages=stages,
+            models=models,
+            max_attempts=args.max_attempts,
+            max_sends=args.max_sends,
+            timeout=args.timeout,
+            dry_run=args.dry_run,
+            on_event=lambda line: print(line, flush=True),
+        )
+    except KeyboardInterrupt:
+        print("")
+        print("{} 已中断".format(WARN))
+        return 130
+
+    print("")
+    if result.get("dry_run"):
+        for key, value in result["plan"].items():
+            print("{}: {}".format(key, value))
+        return 0
+
+    for stage in result["stages"]:
+        print(
+            "  阶段 {}: {} 次尝试，{} 处日志".format(
+                stage["stage"], stage["attempts"] + 1, len(stage["logs"])
+            )
+        )
+    if result["ok"]:
+        print("{} 全部完成：{} 次发送，花费 {:.4f}".format(OK, result["sends"], result["cost"]))
+        if result.get("session_id"):
+            print("   会话: {}（可在 Desktop 打开继续）".format(result["session_id"]))
+        return 0
+
+    print("{} 中止: {}".format(FAIL, result["reason"]))
+    print("   已发送 {} 次，花费 {:.4f}".format(result["sends"], result["cost"]))
+    if result.get("session_id"):
+        print("   会话: {}（可在 Desktop 查看/接管）".format(result["session_id"]))
+    return 1
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    from . import watch as watch_module
+
+    print("监视中（{}）... Ctrl+C 停止".format(args.project or "全部项目"))
+    try:
+        result = watch_module.watch(
+            project_dir=args.project,
+            interval=args.interval,
+            settle_seconds=args.settle,
+            once=args.once,
+            dry_run=args.dry_run,
+            clean_reasoning=args.clean_reasoning,
+            on_event=lambda line: print(line, flush=True),
+        )
+    except KeyboardInterrupt:
+        print("")
+        print("{} 已停止".format(WARN))
+        return 0
+
+    print("扫描 {} 轮，{} {} 条".format(
+        result["scans"],
+        "检测到" if args.dry_run else "替换",
+        len(result["cleaned"]),
+    ))
+    for item in result["cleaned"]:
+        print("  {} -> {}".format(item["session"], item.get("backup")))
+    for error in result["errors"]:
+        print("{} {}".format(WARN, error))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -315,6 +394,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_restore.add_argument("--backup", help="要恢复的备份路径")
     p_restore.add_argument("--db", help="指定 OpenCode 数据库路径")
     p_restore.set_defaults(func=cmd_restore)
+
+    p_auto = sub.add_parser("auto", help="全自动推进工作流（被拒自动清理重试）")
+    p_auto.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
+    p_auto.add_argument("--goal", help="本次目标，注入第一轮文案")
+    p_auto.add_argument("--stages", help="逗号分隔的阶段，如 recon,enum（默认全部）")
+    p_auto.add_argument("--models", help="逗号分隔的模型轮换表，如 glm-5.2,kimi-k2.6")
+    p_auto.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数（默认 3）")
+    p_auto.add_argument("--max-sends", type=int, default=30, help="总发送上限（默认 30）")
+    p_auto.add_argument("--timeout", type=int, default=600, help="单次调用超时秒数（默认 600）")
+    p_auto.add_argument("--dry-run", action="store_true", help="只打印计划")
+    p_auto.set_defaults(func=cmd_auto)
+
+    p_watch = sub.add_parser("watch", help="后台监视并自动清理新拒绝（Desktop 用）")
+    p_watch.add_argument("--project", help="只监视该目录的项目（默认全部）")
+    p_watch.add_argument("--interval", type=float, default=5.0, help="轮询间隔秒（默认 5）")
+    p_watch.add_argument("--settle", type=float, default=3.0, help="消息静默多久才处理（默认 3）")
+    p_watch.add_argument("--once", action="store_true", help="只扫一轮")
+    p_watch.add_argument("--dry-run", action="store_true", help="只报告不修改")
+    p_watch.add_argument("--clean-reasoning", action="store_true", help="同时移除推理内容")
+    p_watch.set_defaults(func=cmd_watch)
 
     return parser
 
