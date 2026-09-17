@@ -77,6 +77,7 @@ def run_auto(
     on_event: Optional[Callable[[str], None]] = None,
     seed: bool = False,
     seed_name: Optional[str] = None,
+    seed_template: str = "harness",
     judge: Any = None,
     prefill_fn: Any = None,
     prefill_mode: Optional[str] = None,
@@ -122,6 +123,7 @@ def run_auto(
             project_dir=project_dir,
             goal=goal or "Task harness",
             name=seed_name,
+            template=seed_template,
         )
         seed_prompt = seeded["prompt"]
         emit("已生成半成品: {}".format(seeded["path"]))

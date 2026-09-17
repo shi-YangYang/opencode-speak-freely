@@ -275,6 +275,7 @@ def cmd_auto(args: argparse.Namespace) -> int:
             timeout=args.timeout,
             dry_run=args.dry_run,
             seed=args.seed,
+            seed_template=args.seed_template,
             prefill_mode=args.prefill,
             crescendo=not args.no_crescendo,
             prime=args.prime,
@@ -344,12 +345,21 @@ def cmd_watch(args: argparse.Namespace) -> int:
 def cmd_seed(args: argparse.Namespace) -> int:
     from . import seed as seed_module
 
-    result = seed_module.scaffold(
-        project_dir=args.directory or os.getcwd(),
-        goal=args.goal or "Task harness",
-        name=args.name,
-        force=args.force,
-    )
+    if args.file:
+        result = seed_module.scaffold_file(
+            project_dir=args.directory or os.getcwd(),
+            file_path=args.file,
+            goal=args.goal or "Task harness",
+            name=args.name,
+        )
+    else:
+        result = seed_module.scaffold(
+            project_dir=args.directory or os.getcwd(),
+            goal=args.goal or "Task harness",
+            name=args.name,
+            force=args.force,
+            template=args.template,
+        )
     if result["status"] == "exists":
         print("{} 已存在，未覆盖（--force 可重建）: {}".format(WARN, result["path"]))
     else:
@@ -486,7 +496,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed = sub.add_parser("seed", help="生成半成品代码文件（补全 TODO 模式）")
     p_seed.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
     p_seed.add_argument("--goal", required=True, help="任务目标，写入文件 docstring")
-    p_seed.add_argument("--name", help="模块名（默认 task_harness）")
+    p_seed.add_argument("--name", help="模块名（默认取模板名）")
+    p_seed.add_argument("--template", choices=["harness", "web", "binary", "doc"],
+                        default="harness", help="模板类型（默认 harness）")
+    p_seed.add_argument("--file", help="在真实文件里追加 TODO 块（JAWS-1 模式）")
     p_seed.add_argument("--force", action="store_true", help="已存在时重建")
     p_seed.add_argument("--copy", action="store_true", help="复制补全提示到剪贴板")
     p_seed.set_defaults(func=cmd_seed)
@@ -501,6 +514,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--timeout", type=int, default=900, help="单次调用超时秒数（默认 900）")
     p_auto.add_argument("--dry-run", action="store_true", help="只打印计划")
     p_auto.add_argument("--seed", action="store_true", help="先生成半成品文件，用补全 TODO 作为第一轮")
+    p_auto.add_argument("--seed-template", choices=["harness", "web", "binary", "doc"],
+                        default="harness", help="seed 使用的模板")
     p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
     p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
     p_auto.add_argument("--prime", type=int, default=0, help="先创建 N 对示例的预热会话（many-shot）")

@@ -376,6 +376,47 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertIn("task_harness.py", prompts[0])
         self.assertIn("TODO", prompts[0])
 
+    def test_seed_templates_available(self):
+        from speakfreely import seed
+
+        for template in ("harness", "web", "binary", "doc"):
+            result = seed.scaffold(self.temp, goal="模板测试", template=template)
+            self.assertEqual(result["status"], "created")
+            content = open(result["path"], encoding="utf-8").read()
+            self.assertIn("模板测试", content)
+            self.assertIn("NotImplementedError", content)
+            os.remove(result["path"])
+
+    def test_seed_file_mode_appends_marker(self):
+        from speakfreely import seed
+
+        real_file = os.path.join(self.temp, "existing.py")
+        with open(real_file, "w", encoding="utf-8") as stream:
+            stream.write("def helper():\n    return 1\n")
+
+        result = seed.scaffold_file(self.temp, real_file, goal="补充实现", name="do_work")
+        self.assertEqual(result["status"], "created")
+        content = open(real_file, encoding="utf-8").read()
+        self.assertIn("def helper():", content)
+        self.assertIn(seed.MARKER, content)
+        self.assertIn("def do_work(", content)
+
+        # 二次调用不重复追加
+        again = seed.scaffold_file(self.temp, real_file, goal="补充实现")
+        self.assertEqual(again["status"], "exists")
+        self.assertEqual(content, open(real_file, encoding="utf-8").read())
+
+    def test_seed_file_mode_markdown(self):
+        from speakfreely import seed
+
+        real_file = os.path.join(self.temp, "notes.md")
+        with open(real_file, "w", encoding="utf-8") as stream:
+            stream.write("# 标题\n")
+
+        seed.scaffold_file(self.temp, real_file, goal="补充文档")
+        content = open(real_file, encoding="utf-8").read()
+        self.assertIn("<!-- {}: 补充文档 -->".format(seed.MARKER), content)
+
 
 class TestJudgeIntegration(unittest.TestCase):
     """关键词漏检、裁判兜底命中的完整路径。"""
