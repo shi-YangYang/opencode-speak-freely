@@ -443,7 +443,7 @@ async function loadPreview() {
   const data = await api("/api/session?id=" + encodeURIComponent(id));
   if (token !== previewToken) return;
   const badge = data.refusals ? `<span class="badge">${data.refusals} 处拒绝</span>` : "";
-  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.total} 条消息${badge}（点击查看完整内容）</div>` +
+  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.shown} 条对话消息（总计 ${data.total} 条，含工具/推理）${badge}（点击查看完整内容）</div>` +
     data.messages.map((m) =>
       `<div class="msg ${m.refusal ? "refusal" : m.role}" data-index="${m.index}">
          <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}<span class="hint">点击查看 →</span></div>

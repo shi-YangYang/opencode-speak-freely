@@ -229,7 +229,7 @@ class TestApi(WebCase):
         self.assertTrue(full["refusal"])
         self.assertEqual(len(full["text"]), len(long_text))
 
-    def test_non_text_message_shows_summary(self):
+    def test_non_text_message_is_hidden(self):
         conn = __import__("sqlite3").connect(self.db_path)
         try:
             conn.execute(
@@ -248,8 +248,10 @@ class TestApi(WebCase):
             conn.close()
 
         _, preview = self.get("/api/session?id=ses_test")
-        texts = [m["text"] for m in preview["messages"]]
-        self.assertTrue(any("工具调用" in text for text in texts), texts)
+        indices = [m["index"] for m in preview["messages"]]
+        self.assertNotIn(0, indices)          # 新插入的无文本消息（绝对索引 0）不展示
+        self.assertEqual(preview["total"], 2)  # 两条都在库里
+        self.assertEqual(preview["shown"], 1)  # 只展示有文本的那条
 
     def test_message_out_of_range(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:

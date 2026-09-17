@@ -263,13 +263,20 @@ def session_preview(session_id: str, db_path: Optional[str] = None, limit: int =
     preview = []
     for index, message in enumerate(messages):
         role = message.get("type")
-        text = _message_display(message, strategy)
-        is_refusal = role == "assistant" and bool(text) and detector.detect(text)
+        text = _message_text(message, strategy)
+        if not text.strip():
+            continue  # 工具调用/推理/步骤等无文本消息不展示
+        is_refusal = role == "assistant" and detector.detect(text)
         if is_refusal:
             refusals += 1
         preview.append({"index": index, "role": role, "text": text[:1500], "refusal": is_refusal})
 
-    return {"refusals": refusals, "messages": preview[-limit:], "total": len(messages)}
+    return {
+        "refusals": refusals,
+        "messages": preview[-limit:],
+        "total": len(messages),
+        "shown": len(preview),
+    }
 
 
 def session_message(session_id, index, db_path=None):
