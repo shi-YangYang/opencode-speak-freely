@@ -20,11 +20,15 @@
    git push origin dev
    ```
 
-2. **push 到 `dev` 后 CI 自动运行**（GitHub Actions，见 `.github/workflows/ci.yml`）
+2. **手动在 GitHub 创建 PR：`dev` → `main`**（push `dev` 本身不触发 CI）
 
-3. **CI 通过后，手动在 GitHub 创建 PR：`dev` → `main`**
+3. **CI 在 PR 上自动运行**（GitHub Actions，见 `.github/workflows/ci.yml`）
 
-4. **PR 合并完成后，本地同步并推送**
+4. **CI 失败** → 关闭该 PR，把失败的检查反馈给我，在 `dev` 上修复后 push，重新开 PR
+
+5. **CI 通过后合并 PR**
+
+6. **PR 合并完成后，本地同步并推送**
 
    ```bash
    git pull --no-rebase origin main
@@ -37,8 +41,7 @@
 
 **触发条件**
 
-- push 到 `dev`
-- 指向 `main` 的 pull request
+- 指向 `main` 的 pull request（只在 PR 阶段校验，push `dev` 不触发）
 
 **必过检查**（任一项失败即不允许合并）
 
