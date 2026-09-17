@@ -7,6 +7,7 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from . import attempts as attempts_module
 from . import cleaner as cleaner_module
 from . import config as config_module
 from . import judge as judge_module
@@ -200,6 +201,18 @@ def run_auto(
                 report["logs"].append(log_path)
 
             if result.get("timeout"):
+                attempts_module.log_attempt(
+                    {
+                        "project": project_dir,
+                        "stage": stage["key"],
+                        "model": model or "",
+                        "refused": False,
+                        "cleaned": False,
+                        "timeout": True,
+                        "cost": float(result.get("cost") or 0),
+                        "text_len": len(result.get("text") or ""),
+                    }
+                )
                 report["attempts"] += 1
                 if report["attempts"] >= max_attempts:
                     stage_reports.append(report)
@@ -215,6 +228,20 @@ def run_auto(
                 if judge.is_refusal(output_text) is True:
                     judge_module.record_miss(output_text, source="auto")
                     refused = True
+
+            attempts_module.log_attempt(
+                {
+                    "project": project_dir,
+                    "stage": stage["key"],
+                    "model": model or "",
+                    "refused": refused,
+                    "cleaned": False,
+                    "timeout": False,
+                    "cost": float(result.get("cost") or 0),
+                    "text_len": len(output_text),
+                }
+            )
+
             if not refused:
                 emit("[{}] 完成（{} 字符）".format(stage["key"], len(output_text)))
                 last_summary = _summarize(output_text)

@@ -144,8 +144,27 @@ class TestParseEvents(unittest.TestCase):
         self.assertEqual(parsed["text"], "")
 
 
-class TestAutoLoop(unittest.TestCase):
+class HomeIsolation:
+    """把 HOME 指到临时目录，避免测试写入真实配置。"""
+
     def setUp(self):
+        super().setUp()
+        self._temp_home = tempfile.mkdtemp(prefix="speakfreely-home-")
+        self._old_home = os.environ.get("HOME")
+        os.environ["HOME"] = self._temp_home
+
+    def tearDown(self):
+        if self._old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._old_home
+        shutil.rmtree(self._temp_home, ignore_errors=True)
+        super().tearDown()
+
+
+class TestAutoLoop(HomeIsolation, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
         self.temp = tempfile.mkdtemp(prefix="speakfreely-auto-")
         self.db_path = os.path.join(self.temp, "opencode.db")
         self.project = os.path.join(self.temp, "project")
@@ -296,8 +315,9 @@ class TestWatch(unittest.TestCase):
         self.assertEqual(read_text(self.db_path), REFUSAL)
 
 
-class TestSeed(unittest.TestCase):
+class TestSeed(HomeIsolation, unittest.TestCase):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.mkdtemp(prefix="speakfreely-seed-")
 
     def tearDown(self):
@@ -556,7 +576,7 @@ class TestPrefillIntegration(unittest.TestCase):
         self.assertEqual(cleaned_with, [self.GENERATED])
 
 
-class TestCrescendo(unittest.TestCase):
+class TestCrescendo(HomeIsolation, unittest.TestCase):
     """下一轮引用上一轮产出。"""
 
     def test_next_prompt_references_last_output(self):

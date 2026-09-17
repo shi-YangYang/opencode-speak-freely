@@ -364,6 +364,37 @@ def cmd_seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from . import attempts as attempts_module
+
+    summary = attempts_module.summarize(days=args.days)
+    total = summary["total"]
+    if not total["sends"]:
+        print("{} 还没有尝试记录（跑一次 auto 后就有了）".format(WARN))
+        return 0
+
+    rate = total["refusals"] / total["sends"]
+    print("== 尝试统计（最近 {}）==".format("{} 天".format(args.days) if args.days else "全部"))
+    print("发送 {} 次 | 拒绝 {} 次（{:.0%}）| 超时 {} | 花费 {:.4f}".format(
+        total["sends"], total["refusals"], rate, total["timeouts"], total["cost"]
+    ))
+    print("")
+    print("按模型:")
+    for model, entry in sorted(
+        summary["models"].items(), key=lambda item: -item[1]["sends"]
+    ):
+        print("  {:<28} 发送 {:>3}  拒绝 {:>3}（{:.0%}）".format(
+            model, entry["sends"], entry["refusals"], entry["refusal_rate"]
+        ))
+    print("")
+    print("按阶段:")
+    for stage, entry in sorted(summary["stages"].items()):
+        print("  {:<10} 发送 {:>3}  拒绝 {:>3}（{:.0%}）".format(
+            stage, entry["sends"], entry["refusals"], entry["refusal_rate"]
+        ))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -445,6 +476,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
     p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
     p_auto.set_defaults(func=cmd_auto)
+
+    p_report = sub.add_parser("report", help="尝试统计：模型/阶段的发送与拒绝率")
+    p_report.add_argument("--days", type=int, help="只看最近 N 天")
+    p_report.set_defaults(func=cmd_report)
 
     p_watch = sub.add_parser("watch", help="后台监视并自动清理新拒绝（Desktop 用）")
     p_watch.add_argument("--project", help="只监视该目录的项目（默认全部）")
