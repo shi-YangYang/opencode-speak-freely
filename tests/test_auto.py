@@ -25,12 +25,19 @@ REFUSAL = "抱歉，我不能帮你实现这个协议。"
 def build_db(db_path: str, directory: str, session_id: str = "ses_test"):
     conn = sqlite3.connect(db_path)
     now_ms = int(time.time() * 1000)
+    project_id = "proj_test"
     try:
         conn.executescript(
             """
+            CREATE TABLE project (
+                id TEXT PRIMARY KEY, worktree TEXT NOT NULL, name TEXT,
+                time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
+            );
             CREATE TABLE session (
-                id TEXT PRIMARY KEY, title TEXT, directory TEXT,
-                time_created INTEGER, time_updated INTEGER
+                id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT,
+                parent_id TEXT, slug TEXT NOT NULL, directory TEXT NOT NULL,
+                path TEXT, title TEXT NOT NULL, version TEXT NOT NULL,
+                time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL
             );
             CREATE TABLE message (
                 id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER,
@@ -43,8 +50,13 @@ def build_db(db_path: str, directory: str, session_id: str = "ses_test"):
             """
         )
         conn.execute(
-            "INSERT INTO session VALUES (?,?,?,?,?)",
-            (session_id, "auto-test", directory, now_ms, now_ms),
+            "INSERT INTO project VALUES (?,?,?,?,?)",
+            (project_id, directory, "test", now_ms, now_ms),
+        )
+        conn.execute(
+            "INSERT INTO session (id, project_id, slug, directory, title, version, "
+            "time_created, time_updated) VALUES (?,?,?,?,?,?,?,?)",
+            (session_id, project_id, "test-slug", directory, "auto-test", "1.18.31", now_ms, now_ms),
         )
         conn.execute(
             "INSERT INTO message VALUES (?,?,?,?,?)",

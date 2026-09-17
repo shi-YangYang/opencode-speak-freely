@@ -81,6 +81,7 @@ def run_auto(
     prefill_fn: Any = None,
     prefill_mode: Optional[str] = None,
     crescendo: bool = True,
+    prime: int = 0,
 ) -> Dict[str, Any]:
     """按工作流阶段自动推进，被拒时自动清理并重试。
 
@@ -150,6 +151,19 @@ def run_auto(
     total_cost = 0.0
     last_summary = ""
     stage_reports: List[Dict[str, Any]] = []
+
+    if prime:
+        from . import prime as prime_module
+
+        primed = prime_module.create_primed_session(
+            project_dir, examples=prime, db_path=db_path
+        )
+        session_id = primed["session_id"]
+        emit(
+            "已创建预热会话: {}（{} 条示例消息）".format(
+                session_id, primed["messages"]
+            )
+        )
 
     for stage_index, stage in enumerate(stage_defs, 1):
         if stage_index == 1 and seed_prompt:

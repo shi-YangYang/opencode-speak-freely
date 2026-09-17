@@ -277,6 +277,7 @@ def cmd_auto(args: argparse.Namespace) -> int:
             seed=args.seed,
             prefill_mode=args.prefill,
             crescendo=not args.no_crescendo,
+            prime=args.prime,
             on_event=lambda line: print(line, flush=True),
         )
     except KeyboardInterrupt:
@@ -395,6 +396,33 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prime(args: argparse.Namespace) -> int:
+    from . import prime as prime_module
+
+    try:
+        result = prime_module.create_primed_session(
+            project_dir=args.directory or os.getcwd(),
+            examples=args.examples,
+            ask=args.ask,
+            db_path=args.db,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("{} 创建预热会话失败: {}".format(FAIL, exc))
+        return 1
+
+    print("{} 已创建预热会话: {}".format(OK, result["session_id"]))
+    print("   目录: {}".format(result["directory"]))
+    print("   消息: {} 条（示例 {} 对{}）".format(
+        result["messages"], args.examples,
+        " + 你的请求" if args.ask else "",
+    ))
+    print("")
+    print("继续方式：")
+    print("  Desktop: 打开该目录即可看到该会话")
+    print("  CLI:     opencode run --dir <目录> -s {} \"<你的请求>\"".format(result["session_id"]))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -475,7 +503,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--seed", action="store_true", help="先生成半成品文件，用补全 TODO 作为第一轮")
     p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
     p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
+    p_auto.add_argument("--prime", type=int, default=0, help="先创建 N 对示例的预热会话（many-shot）")
     p_auto.set_defaults(func=cmd_auto)
+
+    p_prime = sub.add_parser("prime", help="创建预热会话（many-shot 示例历史）")
+    p_prime.add_argument("directory", nargs="?", default=None, help="项目目录（默认当前目录）")
+    p_prime.add_argument("--examples", type=int, default=3, help="示例问答对数（默认 3，最多 4）")
+    p_prime.add_argument("--ask", help="在预热历史末尾附上你的请求")
+    p_prime.add_argument("--db", help="指定 OpenCode 数据库路径")
+    p_prime.set_defaults(func=cmd_prime)
 
     p_report = sub.add_parser("report", help="尝试统计：模型/阶段的发送与拒绝率")
     p_report.add_argument("--days", type=int, help="只看最近 N 天")
