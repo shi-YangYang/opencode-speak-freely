@@ -92,15 +92,24 @@
     --max-attempts 3
 
 # 代码上下文模式（实测最有效，见 docs/research.md §0）：
-./scripts/speakfreely auto ~/project/<目标项目> --goal "<任务目标>" --seed
+./scripts/speakfreely auto ~/project/<目标项目> --goal "<任务目标>" --seed \
+    --seed-template harness            # harness/web/binary/doc
+
+# 预热 + 内容感知替换 + 引用上一轮（默认全开）：
+./scripts/speakfreely auto ~/project/<目标项目> --goal "<任务目标>" \
+    --prime 3 --prefill auto
 ```
 
 - 按 recon → enum → analyze → exploit → evidence 自动推进
-- 每轮调用 `opencode run`，用拒绝检测器判断结果；被拒 → 自动清理该会话 → 自动重试（必要时轮换模型）
+- 每轮调用 `opencode run`，用拒绝检测器（关键词 + 正则 + 可选 LLM 裁判）判断结果；被拒 → 自动清理该会话 → 自动重试（必要时轮换模型）
+- 默认引用上一轮产出（Crescendo）：下一轮以"上一轮你已完成（摘要）：…"开头
 - 单个阶段连续被拒达到上限或总发送数超预算就停下报告
 - 日志落在 `<项目>/evidence/auto/<时间戳>/`，会话可在 Desktop 里打开继续
 - 只打印计划不执行：`--dry-run`；限定阶段：`--stages recon,enum`
-- `--seed`：先生成 `tools/task_harness.py` 半成品（TODO 清单），第一轮改为"补全 TODO"
+- `--seed`：先生成半成品文件（TODO 清单），第一轮改为"补全 TODO"
+- `--prime N`：先建一个含 N 对示例问答的预热会话（many-shot）
+- `--prefill auto`：被拒时的替换文案由 LLM 生成
+- 关闭引用：`--no-crescendo`
 
 **C. `seed` — 代码上下文模式（Desktop 也适用）**
 
@@ -111,6 +120,27 @@
 
 - 把任务意图写进半成品文件的 TODO，让代理做"就地补全"而不是"回答敏感问题"
 - 实测：同一模型直接提问被拒 3 次，改为补全 TODO 后完整实现（glm-5.2 / kimi-k2.6 均可）
+- 模板：`--template harness|web|binary|doc`（网络探测 / Web 页面 / 二进制样本 / 文档编辑）
+- 真实文件模式：`--file existing.py` 在已有文件里追加带标记的 TODO（JAWS-1，效果更真实）
+
+**D. `prime` / `report` — 预热与数据**
+
+```bash
+./scripts/speakfreely prime ~/project/<目标项目> --examples 3   # 注入示例历史的预热会话
+./scripts/speakfreely report [--days 7]                          # 模型/阶段拒绝率统计
+```
+
+**检测与替换的可选增强（配置 `~/.config/speakfreely/config.json`）**
+
+```json
+{
+  "judge":   { "enabled": true, "endpoint": "https://.../v1", "api_key": "sk-...", "model": "<便宜模型>" },
+  "prefill": { "mode": "auto",  "endpoint": "https://.../v1", "api_key": "sk-...", "model": "<便宜模型>" }
+}
+```
+
+- `judge`：关键词/正则漏检时用 LLM 兜底判定"是不是拒绝"，漏检样本记录到 `~/.config/speakfreely/misses.jsonl`
+- `prefill`：被拒时的替换文案由 LLM 结合上下文生成"答案开头"，失败自动回退模板
 
 ## 手动安装（等价）
 

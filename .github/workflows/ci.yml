@@ -42,11 +42,15 @@ jobs:
           python3 -m speakfreely.cli --version
           python3 -m speakfreely.cli next --list
           python3 -m speakfreely.cli status > /dev/null
+          python3 -m speakfreely.cli report > /dev/null
 
           TMP="$(mktemp -d)"
           python3 -m speakfreely.cli seed "$TMP" --goal "ci smoke" > /dev/null
           test -f "$TMP/tools/task_harness.py"
           grep -q "NotImplementedError" "$TMP/tools/task_harness.py"
           grep -q "ci smoke" "$TMP/tools/task_harness.py"
+
+          python3 -m speakfreely.cli seed "$TMP" --goal "ci web" --template web > /dev/null
+          test -f "$TMP/tools/web_probe.py"
 
           python3 -m speakfreely.cli clean --dry-run --db "$TMP/missing.db"
