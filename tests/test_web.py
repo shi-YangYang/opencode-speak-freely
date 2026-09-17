@@ -229,6 +229,28 @@ class TestApi(WebCase):
         self.assertTrue(full["refusal"])
         self.assertEqual(len(full["text"]), len(long_text))
 
+    def test_non_text_message_shows_summary(self):
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO message VALUES (?,?,?,?,?)",
+                ("msg_tool", "ses_test", 1, 1, json.dumps({"role": "assistant"})),
+            )
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                (
+                    "prt_tool", "msg_tool", "ses_test", 1, 1,
+                    json.dumps({"type": "tool", "tool": "bash"}),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _, preview = self.get("/api/session?id=ses_test")
+        texts = [m["text"] for m in preview["messages"]]
+        self.assertTrue(any("工具调用" in text for text in texts), texts)
+
     def test_message_out_of_range(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.get("/api/message?id=ses_test&index=999")

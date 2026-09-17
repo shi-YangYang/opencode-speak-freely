@@ -464,7 +464,7 @@ async function showMessage(session, index) {
     const data = await api(`/api/message?id=${encodeURIComponent(session)}&index=${index}`);
     const flag = data.refusal ? " · 拒绝" : "";
     $("modal-title").textContent = `#${data.index} · ${data.role}${flag} · ${data.text.length} 字符`;
-    $("modal-body").textContent = data.text || "(空消息)";
+    $("modal-body").textContent = data.text || data.display || "(空消息)";
     $("modal-body").scrollTop = 0;
   } catch (e) {
     $("modal-title").textContent = "加载失败";

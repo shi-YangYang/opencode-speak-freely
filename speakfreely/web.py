@@ -263,7 +263,7 @@ def session_preview(session_id: str, db_path: Optional[str] = None, limit: int =
     preview = []
     for index, message in enumerate(messages):
         role = message.get("type")
-        text = _message_text(message, strategy)
+        text = _message_display(message, strategy)
         is_refusal = role == "assistant" and bool(text) and detector.detect(text)
         if is_refusal:
             refusals += 1
@@ -281,9 +281,49 @@ def session_message(session_id, index, db_path=None):
 
     message = messages[index]
     role = message.get("type")
-    text = _message_text(message, OpenCodeFormat())
+    strategy = OpenCodeFormat()
+    text = _message_text(message, strategy)
+    display = _message_display(message, strategy)
     refusal = role == "assistant" and bool(text) and RefusalDetector().detect(text)
-    return {"index": index, "role": role, "text": text, "refusal": refusal}
+    return {"index": index, "role": role, "text": text, "display": display, "refusal": refusal}
+
+
+_PART_LABELS = {
+    "thinking": "推理",
+    "tool": "工具调用",
+    "step-start": "步骤开始",
+    "step-finish": "步骤结束",
+    "file": "文件",
+    "reasoning": "推理",
+}
+
+
+def _message_display(message: Dict[str, Any], strategy: OpenCodeFormat) -> str:
+    """有文本返回文本；没有文本（工具调用/推理/步骤）返回内容摘要。"""
+    text = _message_text(message, strategy)
+    if text.strip():
+        return text
+
+    content = message.get("message", {}).get("content", [])
+    if not isinstance(content, list) or not content:
+        return "（空消息）"
+
+    counts: Dict[str, int] = {}
+    for item in content:
+        if isinstance(item, dict):
+            kind = item.get("type", "?")
+            counts[kind] = counts.get(kind, 0) + 1
+
+    if not counts:
+        return "（空消息）"
+    parts = []
+    for key, label in _PART_LABELS.items():
+        if counts.get(key):
+            parts.append("{} ×{}".format(label, counts[key]))
+    for key, value in counts.items():
+        if key not in _PART_LABELS:
+            parts.append("{} ×{}".format(key, value))
+    return "（无文本：" + " · ".join(parts) + "）"
 
 
 def _message_text(message: Dict[str, Any], strategy: OpenCodeFormat) -> str:
