@@ -96,6 +96,7 @@ Rules:
 | `speakfreely seed` | 代码上下文 | 生成半成品文件（4 种模板）或向真实文件追加 TODO；"补全 TODO"作为请求 |
 | `speakfreely prime` | 预热（many-shot） | 直接建库写入 N 对示例问答的会话 |
 | `speakfreely report` | 数据闭环 | 汇总每次发送（模型/阶段）的拒绝率与花费 |
+| `speakfreely web` | 本地 Web UI | 纯标准库 HTTP 服务 + 单页前端：选项目/会话/模型 + 输入框 + 日志 |
 
 ### 本轮优化（2026-09-17）
 

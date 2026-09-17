@@ -329,3 +329,125 @@ def _latest_session_for(project_dir: str, db_path: Optional[str]) -> Optional[st
         if os.path.realpath(item.get("directory") or "") == target:
             return item["session_id"]
     return sessions[0]["session_id"] if sessions else None
+
+
+def send_to_session(
+    project_dir: str,
+    session_id: str,
+    prompt: str,
+    model: Optional[str] = None,
+    max_attempts: int = 3,
+    timeout: int = 900,
+    db_path: Optional[str] = None,
+    runner: Optional[Callable[..., Dict[str, Any]]] = None,
+    clean_fn: Optional[Callable[..., Dict[str, Any]]] = None,
+    detector: Optional[RefusalDetector] = None,
+    judge: Any = None,
+    prefill_fn: Any = None,
+    retry_prompt: str = DEFAULT_RETRY_PROMPT,
+    on_event: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """向已有会话发一条消息；被拒时自动清理并重试。
+
+    Returns:
+        {ok, text, attempts, sends, cost, session_id, backup, reason}
+    """
+    project_dir = os.path.realpath(os.path.expanduser(project_dir))
+    runner = runner or run_open
+    clean_fn = clean_fn or _default_clean_fn
+    detector = detector or RefusalDetector()
+    config = config_module.load_config()
+    if judge is None:
+        judge = judge_module.from_config(config)
+    if prefill_fn is None:
+        prefill_fn = prefill_module.from_config(config)
+
+    def emit(message: str) -> None:
+        if on_event:
+            on_event(message)
+
+    sends = 0
+    cost = 0.0
+    attempts = 0
+    current = prompt
+    backup = None
+
+    while True:
+        result = runner(
+            current,
+            directory=project_dir,
+            model=model,
+            session=session_id,
+            timeout=timeout,
+        )
+        sends += 1
+        cost += float(result.get("cost") or 0)
+        text = result.get("text") or ""
+
+        if result.get("timeout"):
+            attempts_module.log_attempt(
+                {
+                    "project": project_dir,
+                    "stage": "send",
+                    "model": model or "",
+                    "refused": False,
+                    "cleaned": False,
+                    "timeout": True,
+                    "cost": float(result.get("cost") or 0),
+                    "text_len": len(text),
+                }
+            )
+            attempts += 1
+            if attempts >= max_attempts:
+                return {
+                    "ok": False, "text": text, "attempts": attempts,
+                    "sends": sends, "cost": cost, "session_id": session_id,
+                    "backup": backup, "reason": "超时",
+                }
+            continue
+
+        refused = detector.detect(text)
+        if not refused and judge is not None and judge_module.should_judge(text):
+            if judge.is_refusal(text) is True:
+                judge_module.record_miss(text, source="send")
+                refused = True
+
+        attempts_module.log_attempt(
+            {
+                "project": project_dir,
+                "stage": "send",
+                "model": model or "",
+                "refused": refused,
+                "cleaned": False,
+                "timeout": False,
+                "cost": float(result.get("cost") or 0),
+                "text_len": len(text),
+            }
+        )
+
+        if not refused:
+            return {
+                "ok": True, "text": text, "attempts": attempts,
+                "sends": sends, "cost": cost, "session_id": session_id,
+                "backup": backup, "reason": None,
+            }
+
+        emit("检测到拒绝，清理会话后重试")
+        replacement = None
+        if prefill_fn is not None:
+            replacement = prefill_fn.generate(prompt, text)
+        clean_result = clean_fn(session_id, replacement or "", db_path)
+        entry = (clean_result.get("sessions") or [{}])[0]
+        backup = entry.get("backup") or backup
+        if entry.get("error"):
+            emit("清理失败: {}".format(entry["error"]))
+
+        attempts += 1
+        if attempts >= max_attempts:
+            return {
+                "ok": False, "text": text, "attempts": attempts,
+                "sends": sends, "cost": cost, "session_id": session_id,
+                "backup": backup,
+                "reason": "连续被拒 {} 次".format(max_attempts),
+            }
+        current = retry_prompt

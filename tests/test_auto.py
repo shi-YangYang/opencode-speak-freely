@@ -696,5 +696,75 @@ class TestCrescendo(HomeIsolation, unittest.TestCase):
         self.assertTrue(summary.endswith("。") or summary.endswith("…"))
 
 
+class TestSendToSession(unittest.TestCase):
+    """向已有会话发消息：被拒自动清理重试。"""
+
+    def setUp(self):
+        self.temp_home = tempfile.mkdtemp(prefix="speakfreely-send-")
+        self.old_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.temp_home
+        self.db_path = os.path.join(self.temp_home, "opencode.db")
+        self.project = os.path.join(self.temp_home, "project")
+        os.makedirs(self.project, exist_ok=True)
+        build_db(self.db_path, self.project)
+
+    def tearDown(self):
+        if self.old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.old_home
+        shutil.rmtree(self.temp_home, ignore_errors=True)
+
+    def test_refusal_then_success(self):
+        responses = [
+            {"session_id": "ses_test", "text": REFUSAL, "cost": 0.01},
+            {"session_id": "ses_test", "text": "好的，继续。", "cost": 0.02},
+        ]
+        prompts = []
+        cleaned = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return responses.pop(0)
+
+        def fake_clean(session_id, replacement, db_path):
+            cleaned.append(session_id)
+            return {"sessions": [{"backup": "/tmp/bak", "modified": True}]}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="帮我继续推进",
+            runner=fake_runner,
+            clean_fn=fake_clean,
+            db_path=self.db_path,
+            judge=False,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["sends"], 2)
+        self.assertEqual(prompts, ["帮我继续推进", "继续"])
+        self.assertEqual(cleaned, ["ses_test"])
+        self.assertEqual(result["backup"], "/tmp/bak")
+
+    def test_gives_up(self):
+        def fake_runner(prompt, **kwargs):
+            return {"session_id": "ses_test", "text": REFUSAL, "cost": 0.0}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="继续",
+            runner=fake_runner,
+            clean_fn=lambda *args, **kwargs: {"sessions": [{}]},
+            db_path=self.db_path,
+            max_attempts=2,
+            judge=False,
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("连续被拒", result["reason"])
+        self.assertEqual(result["sends"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

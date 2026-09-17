@@ -491,6 +491,13 @@ def cmd_vibe(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    from . import web
+
+    web.serve(host=args.host, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="speakfreely",
@@ -585,6 +592,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_prime.add_argument("--ask", help="在预热历史末尾附上你的请求")
     p_prime.add_argument("--db", help="指定 OpenCode 数据库路径")
     p_prime.set_defaults(func=cmd_prime)
+
+    p_web = sub.add_parser("web", help="启动本地 Web UI（浏览器操作，无需命令）")
+    p_web.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，仅本机）")
+    p_web.add_argument("--port", type=int, default=8788, help="端口（默认 8788）")
+    p_web.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    p_web.set_defaults(func=cmd_web)
 
     p_vibe = sub.add_parser("vibe", help="一句话目标：自动 seed + 全阶段推进 + 清理重试")
     p_vibe.add_argument("goal", help="自然语言目标（写进半成品文件，不直接发给模型）")
