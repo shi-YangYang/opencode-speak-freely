@@ -95,6 +95,7 @@
          cursor: pointer; transition: background 0.15s; }
   .msg:hover { background: #1a2130; }
   .msg .hint { float: right; color: var(--muted); font-size: 11px; }
+  .msg .msg-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* 消息详情模态框 */
   #modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .55);
@@ -446,7 +447,7 @@ async function loadPreview() {
     data.messages.map((m) =>
       `<div class="msg ${m.refusal ? "refusal" : m.role}" data-index="${m.index}">
          <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}<span class="hint">点击查看 →</span></div>
-         <div>${esc(m.text)}</div>
+         <div class="msg-text">${esc(m.text)}</div>
        </div>`).join("");
   $("preview").querySelectorAll(".msg[data-index]").forEach((node) => {
     node.addEventListener("click", () => showMessage(sessionDD.getValue(), node.dataset.index));
