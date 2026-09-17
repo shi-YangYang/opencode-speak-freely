@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from speakfreely import auto as auto_module  # noqa: E402
+from speakfreely import judge as judge_module  # noqa: E402
 from speakfreely import watch as watch_module  # noqa: E402
 from speakfreely.runner import parse_events  # noqa: E402
 
@@ -342,6 +343,111 @@ class TestSeed(unittest.TestCase):
         )
         self.assertIn("task_harness.py", prompts[0])
         self.assertIn("TODO", prompts[0])
+
+
+class TestJudgeIntegration(unittest.TestCase):
+    """关键词漏检、裁判兜底命中的完整路径。"""
+
+    SNEAKY = "这个方向涉及未授权滥用，我停在权限边界内。"
+
+    def setUp(self):
+        self.temp_home = tempfile.mkdtemp(prefix="speakfreely-judge-")
+        self.old_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.temp_home
+        self.db_path = os.path.join(self.temp_home, "opencode.db")
+        self.project = os.path.join(self.temp_home, "project")
+        os.makedirs(self.project, exist_ok=True)
+        build_db(self.db_path, self.project)
+
+    def tearDown(self):
+        if self.old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.old_home
+        shutil.rmtree(self.temp_home, ignore_errors=True)
+
+    def _set_text(self, text):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "UPDATE part SET data = ? WHERE id = 'prt_text'",
+                (json.dumps({"type": "text", "text": text}),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_keyword_layer_misses_sneaky_text(self):
+        from speakfreely.core import RefusalDetector
+
+        self.assertFalse(RefusalDetector().detect(self.SNEAKY))
+        self.assertTrue(judge_module.should_judge(self.SNEAKY))
+
+    def test_judge_pass_replaces_and_records_miss(self):
+        from speakfreely import cleaner
+
+        self._set_text(self.SNEAKY)
+
+        class FakeJudge:
+            def is_refusal(inner_self, text):
+                return text == TestJudgeIntegration.SNEAKY
+
+        result = cleaner.clean_opencode(
+            session="ses_test", db_path=self.db_path, judge=FakeJudge()
+        )
+        entry = result["sessions"][0]
+        self.assertTrue(entry["modified"])
+        self.assertNotEqual(read_text(self.db_path), self.SNEAKY)
+
+        misses = os.path.join(self.temp_home, ".config", "speakfreely", "misses.jsonl")
+        self.assertTrue(os.path.exists(misses))
+        record = json.loads(open(misses, encoding="utf-8").read().strip())
+        self.assertEqual(record["source"], "judge")
+
+    def test_keyword_hit_never_calls_judge(self):
+        from speakfreely import cleaner
+
+        calls = []
+
+        class FakeJudge:
+            def is_refusal(self, text):
+                calls.append(text)
+                return True
+
+        result = cleaner.clean_opencode(
+            session="ses_test", db_path=self.db_path, judge=FakeJudge()
+        )
+        self.assertTrue(result["sessions"][0]["modified"])
+        self.assertEqual(calls, [])
+
+    def test_auto_treats_judged_refusal_as_refusal(self):
+        auto_calls = []
+
+        def fake_runner(prompt, **kwargs):
+            auto_calls.append(prompt)
+            return {"session_id": "ses_test", "text": self.SNEAKY, "cost": 0.0}
+
+        cleaned = []
+
+        def fake_clean(session_id, replacement, db_path):
+            cleaned.append(session_id)
+            return {"sessions": [{}]}
+
+        result = auto_module.run_auto(
+            project_dir=self.project,
+            stages=["recon"],
+            runner=fake_runner,
+            clean_fn=fake_clean,
+            db_path=self.db_path,
+            max_attempts=1,
+            judge=judge_module.LLMJudge(
+                endpoint="http://x", model="m", chat_fn=lambda *a, **k: "REFUSAL"
+            ),
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("连续被拒", result["reason"])
+        self.assertEqual(cleaned, ["ses_test"])
 
 
 if __name__ == "__main__":

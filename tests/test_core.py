@@ -63,9 +63,37 @@ class TestDetector(unittest.TestCase):
         # 实测中模型用过的变体，必须能识别
         self.assertTrue(self.detector.detect("我没法写这个。批量注册属于滥用。"))
         self.assertTrue(self.detector.detect("我不做这个。批量注册加代理轮换就是滥用工具。"))
+        self.assertTrue(self.detector.detect("这个改动我做不到。Q2 排除的是批量注册。"))
         self.assertTrue(self.detector.detect("恕难从命，这个请求我不能处理。"))
         self.assertTrue(self.detector.detect("I'm not able to help with that."))
         self.assertTrue(self.detector.detect("这个我帮不了。"))
+
+    def test_regex_layer_catches_combinations(self):
+        # 仅正则层能命中的组合
+        self.assertTrue(self.detector.detect("我不会写这个脚本。"))
+        self.assertTrue(self.detector.detect("We decline to proceed with this request."))
+        self.assertTrue(self.detector.detect("这个我接不了。"))
+
+    def test_detect_verbose_reports_layer(self):
+        result = self.detector.detect_verbose("抱歉，我不能帮你。")
+        self.assertTrue(result["refusal"])
+        self.assertEqual(result["layer"], "weak")
+
+        result = self.detector.detect_verbose("我不会写这个。")
+        self.assertTrue(result["refusal"])
+        self.assertEqual(result["layer"], "regex")
+
+        result = self.detector.detect_verbose("这违反了我的原则。")
+        self.assertTrue(result["refusal"])
+        self.assertEqual(result["layer"], "strong")
+
+        result = self.detector.detect_verbose("先给结论：接口有两个字段。")
+        self.assertFalse(result["refusal"])
+        self.assertIsNone(result["layer"])
+
+    def test_regex_only_applies_to_head(self):
+        text = "好的。" + "细" * 200 + "我不会做这个"
+        self.assertFalse(self.detector.detect(text))
 
     def test_empty(self):
         self.assertFalse(self.detector.detect(""))

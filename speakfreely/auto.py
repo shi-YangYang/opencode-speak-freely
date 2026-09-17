@@ -8,6 +8,8 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from . import cleaner as cleaner_module
+from . import config as config_module
+from . import judge as judge_module
 from . import workflow
 from .core import OpenCodeDBAdapter, RefusalDetector
 from .runner import run_open
@@ -58,6 +60,7 @@ def run_auto(
     on_event: Optional[Callable[[str], None]] = None,
     seed: bool = False,
     seed_name: Optional[str] = None,
+    judge: Any = None,
 ) -> Dict[str, Any]:
     """按工作流阶段自动推进，被拒时自动清理并重试。
 
@@ -68,6 +71,8 @@ def run_auto(
     runner = runner or run_open
     clean_fn = clean_fn or _default_clean_fn
     detector = detector or RefusalDetector()
+    if judge is None:
+        judge = judge_module.from_config(config_module.load_config())
 
     def emit(message: str) -> None:
         if on_event:
@@ -180,7 +185,12 @@ def run_auto(
                 continue
 
             output_text = result.get("text") or ""
-            if not detector.detect(output_text):
+            refused = detector.detect(output_text)
+            if not refused and judge is not None and judge_module.should_judge(output_text):
+                if judge.is_refusal(output_text) is True:
+                    judge_module.record_miss(output_text, source="auto")
+                    refused = True
+            if not refused:
                 emit("[{}] 完成（{} 字符）".format(stage["key"], len(output_text)))
                 break
 

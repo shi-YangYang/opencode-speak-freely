@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from . import config as config_module
+from . import judge as judge_module
 from . import workflow
 from .core import (
     DEFAULT_OPENCODE_DB,
     DEFAULT_REPLACEMENT,
+    ChangeDetail,
     OpenCodeDBAdapter,
+    OpenCodeFormat,
     RefusalDetector,
     clean_messages,
 )
@@ -38,6 +41,39 @@ def _change_line(change: Any) -> str:
     return "第 {} 行 {}".format(change.line_num, kind)
 
 
+def _judge_pass(
+    messages: List[Dict[str, Any]],
+    detector: RefusalDetector,
+    judge: Any,
+    replacement: str,
+    show_content: bool = False,
+) -> tuple:
+    """对关键词层未命中、但启发式可疑的消息做 LLM 裁判；判为拒绝则替换。"""
+    strategy = OpenCodeFormat()
+    modified = False
+    changes: List[ChangeDetail] = []
+
+    for index, msg in strategy.get_assistant_messages(messages):
+        text = strategy.extract_text_content(msg)
+        if not text or detector.detect(text):
+            continue
+        if not judge_module.should_judge(text):
+            continue
+        if judge.is_refusal(text) is not True:
+            continue
+
+        judge_module.record_miss(text, source="judge")
+        detail = ChangeDetail(line_num=index + 1, change_type="replace", line_nums=[index + 1])
+        if show_content:
+            detail.original_content = text[:500] + ("..." if len(text) > 500 else "")
+            detail.new_content = replacement
+        changes.append(detail)
+        messages[index] = strategy.update_text_content(msg, replacement)
+        modified = True
+
+    return modified, changes
+
+
 def clean_opencode(
     all_sessions: bool = False,
     session: Optional[str] = None,
@@ -47,6 +83,8 @@ def clean_opencode(
     replacement: Optional[str] = None,
     stage: Optional[str] = None,
     db_path: Optional[str] = None,
+    use_judge: bool = True,
+    judge: Any = None,
 ) -> Dict[str, Any]:
     """清理 OpenCode 会话中被拒的助手消息。
 
@@ -59,6 +97,8 @@ def clean_opencode(
     replacement_text = _resolve_replacement(replacement, stage, config)
 
     detector = RefusalDetector(config.get("keywords") or {})
+    if judge is None and use_judge:
+        judge = judge_module.from_config(config)
 
     adapter = OpenCodeDBAdapter(db_path or DEFAULT_OPENCODE_DB)
     try:
@@ -100,6 +140,13 @@ def clean_opencode(
             clean_reasoning=clean_reasoning,
             show_content=show_content,
         )
+        if judge is not None:
+            judged, judged_changes = _judge_pass(
+                cleaned, detector, judge, replacement_text, show_content=show_content
+            )
+            if judged:
+                modified = True
+                changes.extend(judged_changes)
         entry["modified"] = modified
         entry["changes"] = [_change_line(change) for change in changes]
         if show_content:
