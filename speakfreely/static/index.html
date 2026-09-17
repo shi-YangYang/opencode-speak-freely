@@ -79,7 +79,7 @@
          background: #0b0e13; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
          flex: 0 1 auto; height: 320px; min-height: 160px; overflow-y: auto; overflow-x: hidden; }
   /* 常显滚动条（macOS 默认悬浮隐藏） */
-  #log, .panel, .dd-menu, #preview, textarea, .tutorial { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
+  #log, .panel, .dd-menu, #preview, textarea, .tutorial, .modal-body { scrollbar-width: thin; scrollbar-color: #39435a #0b0e13; }
   #log::-webkit-scrollbar, .panel::-webkit-scrollbar, .dd-menu::-webkit-scrollbar, .tutorial::-webkit-scrollbar,
   #preview::-webkit-scrollbar, textarea::-webkit-scrollbar { width: 10px; }
   #log::-webkit-scrollbar-track, .panel::-webkit-scrollbar-track, .dd-menu::-webkit-scrollbar-track, .tutorial::-webkit-scrollbar-track,
@@ -91,7 +91,24 @@
   #preview::-webkit-scrollbar-thumb:hover, textarea::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
   #preview { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;
              flex: 1 1 auto; min-height: 48px; overflow: auto; }
-  .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px; }
+  .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px;
+         cursor: pointer; transition: background 0.15s; }
+  .msg:hover { background: #1a2130; }
+  .msg .hint { float: right; color: var(--muted); font-size: 11px; }
+
+  /* 消息详情模态框 */
+  #modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .55);
+           display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #modal[hidden] { display: none; }
+  .modal-card { width: min(880px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+                background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+                box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .modal-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+                border-bottom: 1px solid var(--border); }
+  .modal-head .title { font-weight: 600; }
+  .modal-head .close { width: auto; margin-left: auto; padding: 4px 10px; }
+  .modal-body { overflow: auto; padding: 14px; white-space: pre-wrap; word-break: break-word;
+                font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .msg.user { border-left: 3px solid #3a4b6b; }
   .msg.assistant { border-left: 3px solid #2f4a3a; }
   .msg.refusal { border-left-color: var(--err); background: #1d1416; }
@@ -209,6 +226,16 @@
 </main>
 
 <div id="tooltip" hidden></div>
+
+<div id="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="title" id="modal-title">消息详情</span>
+      <button class="close" id="modal-close">关闭 ✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -415,13 +442,38 @@ async function loadPreview() {
   const data = await api("/api/session?id=" + encodeURIComponent(id));
   if (token !== previewToken) return;
   const badge = data.refusals ? `<span class="badge">${data.refusals} 处拒绝</span>` : "";
-  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.total} 条消息${badge}</div>` +
+  $("preview").innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${data.total} 条消息${badge}（点击查看完整内容）</div>` +
     data.messages.map((m) =>
-      `<div class="msg ${m.refusal ? "refusal" : m.role}">
-         <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}</div>
+      `<div class="msg ${m.refusal ? "refusal" : m.role}" data-index="${m.index}">
+         <div class="role">${m.role}${m.refusal ? " · 拒绝" : ""}<span class="hint">点击查看 →</span></div>
          <div>${esc(m.text)}</div>
        </div>`).join("");
+  $("preview").querySelectorAll(".msg[data-index]").forEach((node) => {
+    node.addEventListener("click", () => showMessage(sessionDD.getValue(), node.dataset.index));
+  });
 }
+
+/* ── 消息详情模态框 ─────────────────────────────────────────────────── */
+async function showMessage(session, index) {
+  const modal = $("modal");
+  $("modal-title").textContent = "消息详情（加载中…）";
+  $("modal-body").textContent = "";
+  modal.hidden = false;
+  try {
+    const data = await api(`/api/message?id=${encodeURIComponent(session)}&index=${index}`);
+    const flag = data.refusal ? " · 拒绝" : "";
+    $("modal-title").textContent = `#${data.index} · ${data.role}${flag} · ${data.text.length} 字符`;
+    $("modal-body").textContent = data.text || "(空消息)";
+    $("modal-body").scrollTop = 0;
+  } catch (e) {
+    $("modal-title").textContent = "加载失败";
+    $("modal-body").textContent = e.message;
+  }
+}
+function closeModal() { $("modal").hidden = true; }
+$("modal-close").addEventListener("click", closeModal);
+$("modal").addEventListener("click", (event) => { if (event.target === $("modal")) closeModal(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
 
 function updateRunButton() {
   $("btn-run").textContent = sessionDD.getValue() ? "▶ 发送到该会话" : "▶ 运行全流程";

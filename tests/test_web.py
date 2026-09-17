@@ -207,6 +207,33 @@ class TestApi(WebCase):
         _, status = self.post("/api/watch", {"project": self.project, "action": "stop"})
         self.assertEqual(status["status"], "stopping")
 
+    def test_preview_has_index_and_message_returns_full_text(self):
+        long_text = "抱歉，我不能帮你。" + "细节。" * 800  # > 1500 字符
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "UPDATE part SET data = ? WHERE id = 'prt_text'",
+                (json.dumps({"type": "text", "text": long_text}),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _, preview = self.get("/api/session?id=ses_test")
+        last = preview["messages"][-1]
+        self.assertIn("index", last)
+        self.assertLessEqual(len(last["text"]), 1500)
+
+        _, full = self.get("/api/message?id=ses_test&index={}".format(last["index"]))
+        self.assertEqual(full["role"], "assistant")
+        self.assertTrue(full["refusal"])
+        self.assertEqual(len(full["text"]), len(long_text))
+
+    def test_message_out_of_range(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get("/api/message?id=ses_test&index=999")
+        self.assertEqual(ctx.exception.code, 500)
+
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
         self.assertEqual(

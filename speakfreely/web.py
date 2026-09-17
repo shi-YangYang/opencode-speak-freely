@@ -261,15 +261,29 @@ def session_preview(session_id: str, db_path: Optional[str] = None, limit: int =
 
     refusals = 0
     preview = []
-    for message in messages:
+    for index, message in enumerate(messages):
         role = message.get("type")
         text = _message_text(message, strategy)
         is_refusal = role == "assistant" and bool(text) and detector.detect(text)
         if is_refusal:
             refusals += 1
-        preview.append({"role": role, "text": text[:1500], "refusal": is_refusal})
+        preview.append({"index": index, "role": role, "text": text[:1500], "refusal": is_refusal})
 
     return {"refusals": refusals, "messages": preview[-limit:], "total": len(messages)}
+
+
+def session_message(session_id, index, db_path=None):
+    """按绝对索引取单条消息的完整文本（供前端模态框）。"""
+    adapter = _adapter(db_path)
+    messages = adapter.load_session_messages(session_id)
+    if index < 0 or index >= len(messages):
+        raise IndexError("消息索引超出范围: {}".format(index))
+
+    message = messages[index]
+    role = message.get("type")
+    text = _message_text(message, OpenCodeFormat())
+    refusal = role == "assistant" and bool(text) and RefusalDetector().detect(text)
+    return {"index": index, "role": role, "text": text, "refusal": refusal}
 
 
 def _message_text(message: Dict[str, Any], strategy: OpenCodeFormat) -> str:
@@ -473,6 +487,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not session_id:
                     return self._error("缺少 id 参数")
                 return self._json(session_preview(session_id, self.db_path))
+            if parsed.path == "/api/message":
+                session_id = (query.get("id") or [""])[0]
+                index_raw = (query.get("index") or [""])[0]
+                if not session_id or not index_raw.isdigit():
+                    return self._error("需要 id 和数字 index 参数")
+                return self._json(session_message(session_id, int(index_raw), self.db_path))
             if parsed.path == "/api/job":
                 job_id = (query.get("id") or [""])[0]
                 job = JOBS.get(job_id)
