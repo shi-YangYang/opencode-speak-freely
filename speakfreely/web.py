@@ -435,6 +435,7 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     model=model,
                     max_attempts=int(params.get("max_attempts") or 3),
                     timeout=int(params.get("timeout") or 900),
+                    auto_clean=params.get("auto_clean", True) is not False,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":
@@ -449,7 +450,14 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
             else:
                 raise ValueError("未知模式: {}".format(mode))
 
-            JOBS.log(job_id, "完成")
+            if isinstance(result, dict) and result.get("session_id"):
+                JOBS.log(job_id, "会话: {}".format(result["session_id"]))
+            if isinstance(result, dict) and result.get("backup"):
+                JOBS.log(job_id, "备份: {}".format(result["backup"]))
+            if isinstance(result, dict) and result.get("ok") is False:
+                JOBS.log(job_id, "未完成: {}".format(result.get("reason") or "达到上限"))
+            else:
+                JOBS.log(job_id, "完成")
             JOBS.finish(job_id, "done", result)
         except Exception as exc:  # noqa: BLE001 - 任务失败只影响该任务
             JOBS.log(job_id, "失败: {}".format(exc))

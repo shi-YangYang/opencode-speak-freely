@@ -747,6 +747,51 @@ class TestSendToSession(unittest.TestCase):
         self.assertEqual(cleaned, ["ses_test"])
         self.assertEqual(result["backup"], "/tmp/bak")
 
+    def test_logs_refusal_cleanup_and_reply(self):
+        responses = [
+            {"session_id": "ses_test", "text": REFUSAL, "cost": 0.01},
+            {"session_id": "ses_test", "text": "好的，继续。", "cost": 0.02},
+        ]
+        events = []
+
+        def fake_runner(prompt, **kwargs):
+            return responses.pop(0)
+
+        auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="帮我继续推进",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{"backup": "/tmp/b.bak", "modified": True, "changes": ["第 5 行 替换拒绝回复"]}]},
+            db_path=self.db_path,
+            judge=False,
+            on_event=events.append,
+        )
+        joined = "\n".join(events)
+        self.assertIn("检测到拒绝（", joined)
+        self.assertIn("/tmp/b.bak", joined)
+        self.assertIn("模型回复", joined)
+
+    def test_auto_clean_disabled_reports_only(self):
+        events = []
+
+        def fake_runner(prompt, **kwargs):
+            return {"session_id": "ses_test", "text": REFUSAL, "cost": 0.0}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="继续",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: (_ for _ in ()).throw(AssertionError("不应调用清理")),
+            db_path=self.db_path,
+            judge=False,
+            auto_clean=False,
+            on_event=events.append,
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("未清理", result["reason"])
+
     def test_gives_up(self):
         def fake_runner(prompt, **kwargs):
             return {"session_id": "ses_test", "text": REFUSAL, "cost": 0.0}

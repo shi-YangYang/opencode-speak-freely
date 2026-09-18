@@ -263,7 +263,9 @@ def run_auto(
             )
 
             if not refused:
-                emit("[{}] 完成（{} 字符）".format(stage["key"], len(output_text)))
+                emit("[{}] 完成（{} 字符）：{}".format(
+                    stage["key"], len(output_text), _summarize(output_text, 200)
+                ))
                 last_summary = _summarize(output_text)
                 break
 
@@ -346,8 +348,9 @@ def send_to_session(
     prefill_fn: Any = None,
     retry_prompt: str = DEFAULT_RETRY_PROMPT,
     on_event: Optional[Callable[[str], None]] = None,
+    auto_clean: bool = True,
 ) -> Dict[str, Any]:
-    """向已有会话发一条消息；被拒时自动清理并重试。
+    """向已有会话发一条消息；被拒时自动清理并重试（auto_clean=False 时只报告）。
 
     Returns:
         {ok, text, attempts, sends, cost, session_id, backup, reason}
@@ -426,13 +429,20 @@ def send_to_session(
         )
 
         if not refused:
+            emit("模型回复（{} 字符）：{}".format(len(text), _summarize(text, 200)))
             return {
                 "ok": True, "text": text, "attempts": attempts,
                 "sends": sends, "cost": cost, "session_id": session_id,
                 "backup": backup, "reason": None,
             }
 
-        emit("检测到拒绝，清理会话后重试")
+        emit("检测到拒绝（{} 字符）：{}".format(len(text), _summarize(text, 120)))
+        if not auto_clean:
+            return {
+                "ok": False, "text": text, "attempts": attempts,
+                "sends": sends, "cost": cost, "session_id": session_id,
+                "backup": backup, "reason": "被拒绝（未清理，auto_clean=false）",
+            }
         replacement = None
         if prefill_fn is not None:
             replacement = prefill_fn.generate(prompt, text)
@@ -441,6 +451,12 @@ def send_to_session(
         backup = entry.get("backup") or backup
         if entry.get("error"):
             emit("清理失败: {}".format(entry["error"]))
+        else:
+            replaced = entry.get("changes") or []
+            emit("已清理：{}；备份：{}".format(
+                "；".join(replaced) if replaced else "无变更", backup or "（未创建）"
+            ))
+            emit("重试并发送：{}".format(retry_prompt))
 
         attempts += 1
         if attempts >= max_attempts:
