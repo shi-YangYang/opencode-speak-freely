@@ -109,8 +109,12 @@ class ScaffoldPlanner:
         self.api_key = api_key
         self.timeout = timeout
         self._chat = chat_fn or llm.chat
+        self.last_raw = ""
+        self.last_refused = False
 
-    def plan(self, goal: str, project_dir: str) -> Optional[Dict[str, Any]]:
+    def plan(
+        self, goal: str, project_dir: str, prefer: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         if not goal:
             return None
         try:
@@ -131,25 +135,92 @@ class ScaffoldPlanner:
                 max_tokens=3000,
                 temperature=0.2,
             )
-        except Exception:  # noqa: BLE001 - 规划失败必须不影响主流程
+        except Exception as exc:  # noqa: BLE001 - 规划失败必须不影响主流程
+            self.last_raw = "调用失败: {}".format(exc)
+            self.last_refused = False
             return None
-        return parse_response(answer or "")
+
+        self.last_raw = answer or ""
+        from .core import RefusalDetector
+
+        self.last_refused = bool(self.last_raw) and RefusalDetector().detect(self.last_raw)
+        return parse_response(self.last_raw)
 
 
-def from_config(config: Dict[str, Any]) -> Optional[ScaffoldPlanner]:
+STOPWORDS = {
+    "the", "a", "an", "and", "or", "to", "of", "for", "with", "in", "on", "by",
+    "from", "at", "as", "into", "via", "using", "use", "make", "build", "create",
+    "write", "add", "implement", "fix", "update", "refactor", "support", "please",
+    "script", "tool", "code", "project", "task", "help", "want", "need", "this",
+    "that", "some", "new", "based",
+}
+
+
+def _goal_keywords(goal: str, limit: int = 3) -> List[str]:
+    """从目标里提取可做文件名的英文标识符（确定性规则，不调用模型）。"""
+    picked: List[str] = []
+    for token in re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", goal or ""):
+        lowered = token.lower()
+        if lowered in STOPWORDS or len(lowered) < 2 or lowered.isdigit():
+            continue
+        if lowered not in picked:
+            picked.append(lowered)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+class LocalPlanner:
+    """本地规则规划：按目标关键词挑模板与文件名，不调用任何模型。"""
+
+    def __init__(self) -> None:
+        self.last_raw = "(本地规则，未调用模型)"
+        self.last_refused = False
+
+    def plan(
+        self, goal: str, project_dir: str, prefer: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        from . import seed as seed_module
+
+        template = prefer if prefer in seed_module.TEMPLATES else seed_module.pick_template(goal)
+        fallback_name = seed_module.DEFAULT_NAMES.get(template, template)
+        keywords = _goal_keywords(goal)
+        name = seed_module._slugify("_".join(keywords), fallback_name) if keywords else fallback_name
+        if template == "plan":
+            return {
+                "path": "docs/{}.md".format(name),
+                "language": "markdown",
+                "template": template,
+                "steps": [],
+                "functions": [],
+            }
+        return {
+            "path": "tools/{}.py".format(name),
+            "language": "python",
+            "template": template,
+            "steps": [],
+            "functions": [],
+        }
+
+
+def from_config(config: Dict[str, Any]) -> Optional[Any]:
+    """构造规划器：默认本地规则；planner.mode=llm 时才用模型规划。"""
     from . import config as config_module
 
     section = config.get("planner") or {}
     if not section.get("enabled"):
         return None
-    options = config_module.llm_settings(config, section)
-    endpoint = options.get("endpoint") or ""
-    model = options.get("model") or ""
-    if not endpoint or not model:
-        return None
-    return ScaffoldPlanner(
-        endpoint=endpoint,
-        model=model,
-        api_key=options.get("api_key") or None,
-        timeout=float(options.get("timeout") or 30),
-    )
+
+    mode = str(section.get("mode") or "local").lower()
+    if mode == "llm":
+        options = config_module.llm_settings(config, section)
+        endpoint = options.get("endpoint") or ""
+        model = options.get("model") or ""
+        if endpoint and model:
+            return ScaffoldPlanner(
+                endpoint=endpoint,
+                model=model,
+                api_key=options.get("api_key") or None,
+                timeout=float(options.get("timeout") or 30),
+            )
+    return LocalPlanner()

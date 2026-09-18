@@ -159,7 +159,6 @@
   <div class="status">
     <span id="st-opencode"></span>
     <span id="st-prompt"></span>
-    <span id="st-watch"></span>
   </div>
 </header>
 
@@ -196,17 +195,23 @@
     <label>阶段（新会话模式，鼠标悬浮看说明）</label>
     <div class="checks" id="stages"></div>
 
-    <div style="margin-top:14px">
-      <label style="margin-top:0">生成位置（可选，代码上下文模式）</label>
-      <input id="seed-path" placeholder="留空 = 自动决定；也可填 webui/page.py、docs/plan.md" />
+    <div class="row" style="margin-top:14px">
+      <label style="margin-top:0">半成品类型
+        <select id="seed-kind">
+          <option value="auto">自动（代码骨架，本地规划）</option>
+          <option value="doc">规划文档（.md，模型自行生成项目结构）</option>
+        </select>
+      </label>
+      <label style="margin-top:0">生成位置（可选）
+        <input id="seed-path" placeholder="留空 = 自动决定；也可填 webui/page.py、docs/plan.md" />
+      </label>
     </div>
 
     <label>选项</label>
     <div class="checks">
-      <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
       <label style="cursor:pointer" data-tip="已有会话模式：被拒时自动把拒绝替换成继续文案并重试"><input type="checkbox" id="auto-clean" checked> 被拒自动清理</label>
-      <label style="cursor:pointer" data-tip="已有会话模式：把目标写进半成品文件，实际发送「补全 TODO」而不是原始请求（同新建会话的 seed 机制）"><input type="checkbox" id="use-seed" checked> 代码上下文模式</label>
-      <label style="cursor:pointer" data-tip="让 LLM 根据项目和需求自动决定：从哪个文件开始、用什么语言、哪些步骤（需在设置页配置 Provider 并开启）"><input type="checkbox" id="seed-plan" checked> 自动规划</label>
+      <label style="cursor:pointer" data-tip="把目标写进半成品文件再发送（代码补全；类型选「规划文档」时改为按 .md 实施）。已有会话模式下也生效"><input type="checkbox" id="use-seed" checked> 代码上下文模式</label>
+      <label style="cursor:pointer" data-tip="按目标关键词自动选择模板与文件名（本地规则，离线可用，不调用模型）；关掉则用默认模板命名"><input type="checkbox" id="seed-plan" checked> 自动规划</label>
     </div>
 
     <div class="row" style="margin-top:14px">
@@ -230,6 +235,7 @@
 
       <h3>两种模式</h3>
       <ul>
+        <li><b>规划文档模式</b>：半成品类型选「规划文档（.md）」，AI 按文档把项目实现出来（结构自定义），更像"正经用"</li>
         <li><b>新建会话（默认）</b>：目标写进一个半成品文件，AI 当作"补全代码"来做，自动跑
           <b>侦察 → 枚举 → 分析 → 验证 → 取证</b> 五个阶段
           <span class="note">这就是为什么推荐用"梳理 X 的流程并整理证据"这种工程化说法</span></li>
@@ -249,7 +255,7 @@
         <li>五个阶段鼠标悬浮有说明；不想跑全流程就取消勾选要跳过的阶段</li>
         <li>不同模型的拒审阈值差别很大——连续被拒时，<b>换模型比改提示词有效</b></li>
         <li>被拒时的替换文案由「设置」页的 LLM 开关控制（推荐开启）</li>
-        <li>替换文案与自动规划在「设置」页配置（Provider 自动检测，无需手填密钥）</li>
+        <li>自动规划为本地规则（不调用模型）；替换文案与裁判在「设置」页配置（Provider 自动检测，无需手填密钥）</li>
       </ul>
 
       <h3>命令行的等价操作</h3>
@@ -305,7 +311,7 @@
 
 <main id="view-settings" hidden>
   <section class="panel left" style="grid-column: 1 / -1; max-width: 860px; margin: 0 auto; width: 100%">
-    <label>LLM 配置（用于自动规划 / 裁判 / 生成替换文案，支持 OpenAI 兼容接口）</label>
+    <label>LLM 配置（用于拒绝裁判 / 替换文案，以及可选的 LLM 规划；支持 OpenAI 兼容接口）</label>
     <div id="settings-loading" class="muted" style="margin:-2px 0 8px">加载中…</div>
     <div id="settings-detected" class="muted" style="margin:-2px 0 8px" hidden></div>
     <label>Provider（自动检测自 OpenCode 配置与登录）</label>
@@ -337,10 +343,16 @@
 
     <label>功能开关</label>
     <div class="checks">
-      <label style="cursor:pointer" data-tip="让 LLM 根据项目与需求决定半成品文件位置与步骤"><input type="checkbox" id="set-planner"> 自动规划（planner）</label>
       <label style="cursor:pointer" data-tip="关键词漏检时用 LLM 兜底判断是否拒绝"><input type="checkbox" id="set-judge"> 拒绝裁判（judge）</label>
       <label style="cursor:pointer" data-tip="被拒时的替换文案由 LLM 生成（关闭则用模板）"><input type="checkbox" id="set-prefill"> LLM 替换文案（prefill）</label>
     </div>
+    <label style="margin-top:8px">自动规划（半成品文件位置与模板）
+      <select id="set-planner-mode">
+        <option value="local">本地规则（推荐，离线、不调用模型）</option>
+        <option value="llm">LLM（需 Provider，目标敏感时可能拒答）</option>
+        <option value="off">关闭（固定用默认模板命名）</option>
+      </select>
+    </label>
 
     <div class="row">
       <button class="primary" id="btn-settings-save">保存</button>
@@ -644,6 +656,7 @@ async function run(dryRun) {
     auto_clean: $("auto-clean").checked,
     seed: $("use-seed").checked,
     seed_path: $("seed-path").value.trim(),
+    seed_kind: $("seed-kind").value,
     seed_plan: $("seed-plan").checked && !$("seed-path").value.trim(),
     dry_run: !!dryRun,
   };
@@ -942,7 +955,7 @@ async function loadSettings() {
   $("set-timeout").value = data.llm.timeout || 30;
   $("set-key").value = "";
   $("set-key").placeholder = data.llm.api_key_configured ? "已配置；留空保持不变" : "sk-...";
-  $("set-planner").checked = !!data.planner_enabled;
+  $("set-planner-mode").value = data.planner_enabled === false ? "off" : (data.planner_mode || "local");
   $("set-judge").checked = !!data.judge_enabled;
   $("set-prefill").checked = data.prefill_mode === "auto";
 }
@@ -963,7 +976,8 @@ function settingsPayload() {
       api_key: $("set-key").value.trim(),
       timeout: parseFloat($("set-timeout").value || "30"),
     },
-    planner_enabled: $("set-planner").checked,
+    planner_enabled: $("set-planner-mode").value !== "off",
+    planner_mode: $("set-planner-mode").value,
     judge_enabled: $("set-judge").checked,
     prefill_mode: $("set-prefill").checked ? "auto" : "template",
   };

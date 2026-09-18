@@ -82,6 +82,7 @@ def run_auto(
     seed_template: str = "harness",
     seed_path: Optional[str] = None,
     seed_plan: bool = False,
+    seed_kind: Optional[str] = None,
     planner_fn: Any = None,
     judge: Any = None,
     prefill_fn: Any = None,
@@ -129,24 +130,41 @@ def run_auto(
             from . import seed as seed_module
 
             plan = None
+            prefer = "plan" if seed_kind == "doc" or seed_template == "plan" else None
             if seed_plan and not seed_path:
                 planner_fn = planner_fn or planner_module.from_config(config)
                 if planner_fn is None:
-                    emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
+                    emit("自动规划已关闭（设置页可开启），使用默认模板")
                 if planner_fn is not None:
-                    plan = planner_fn.plan(goal or "", project_dir)
-                    if plan:
+                    plan = planner_fn.plan(goal or "", project_dir, prefer=prefer)
+                    if plan and plan.get("template"):
+                        emit("本地规划: {}（模板 {}，规则匹配，不调用模型）".format(
+                            plan["path"], plan["template"]))
+                    elif plan:
                         emit("LLM 规划: {}（{} 步）".format(plan["path"], len(plan["steps"])))
+                    elif getattr(planner_fn, "last_refused", False):
+                        emit("规划失败：模型拒绝该目标（内容原因），使用默认模板")
+                        emit("  模型原话: {}".format(_summarize(planner_fn.last_raw, 160)))
                     else:
-                        emit("规划失败，回退默认模板")
-            seeded = seed_module.scaffold(
-                project_dir=project_dir,
-                goal=goal or "Task harness",
-                name=seed_name,
-                template=seed_template,
-                path=seed_path,
-                plan=plan,
-            )
+                        raw = _summarize(getattr(planner_fn, "last_raw", "") or "(空)", 160)
+                        emit("规划失败：模型未返回可解析的 JSON，使用默认模板 —— {}".format(raw))
+            if plan and plan.get("template"):
+                seeded = seed_module.scaffold(
+                    project_dir=project_dir,
+                    goal=goal or "Task harness",
+                    name=seed_name,
+                    template=plan["template"],
+                    path=plan["path"],
+                )
+            else:
+                seeded = seed_module.scaffold(
+                    project_dir=project_dir,
+                    goal=goal or "Task harness",
+                    name=seed_name,
+                    template=seed_template,
+                    path=seed_path,
+                    plan=plan,
+                )
             seed_prompt = seeded["prompt"]
             emit("已生成半成品: {}".format(seeded["path"]))
 
@@ -371,6 +389,7 @@ def send_to_session(
     seed_template: Optional[str] = None,
     seed_path: Optional[str] = None,
     seed_plan: bool = False,
+    seed_kind: Optional[str] = None,
     planner_fn: Any = None,
     wrap: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -406,23 +425,39 @@ def send_to_session(
         from . import seed as seed_module
 
         plan = None
+        prefer = "plan" if seed_kind == "doc" or seed_template == "plan" else None
         if seed_plan and not seed_path:
-            planner_fn = planner_fn or planner_module.from_config(config_module.load_config())
+            planner_fn = planner_fn or planner_module.from_config(config)
             if planner_fn is None:
-                emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
+                emit("自动规划已关闭（设置页可开启），使用默认模板")
             if planner_fn is not None:
-                plan = planner_fn.plan(prompt, project_dir)
-                if plan:
+                plan = planner_fn.plan(prompt, project_dir, prefer=prefer)
+                if plan and plan.get("template"):
+                    emit("本地规划: {}（模板 {}，规则匹配，不调用模型）".format(
+                        plan["path"], plan["template"]))
+                elif plan:
                     emit("LLM 规划: {}（{} 步）".format(plan["path"], len(plan["steps"])))
+                elif getattr(planner_fn, "last_refused", False):
+                    emit("规划失败：模型拒绝该目标（内容原因），使用默认模板")
+                    emit("  模型原话: {}".format(_summarize(planner_fn.last_raw, 160)))
                 else:
-                    emit("规划失败，回退默认模板")
-        seeded = seed_module.scaffold(
-            project_dir=project_dir,
-            goal=prompt,
-            template=seed_template or seed_module.pick_template(prompt),
-            path=seed_path,
-            plan=plan,
-        )
+                    raw = _summarize(getattr(planner_fn, "last_raw", "") or "(空)", 160)
+                    emit("规划失败：模型未返回可解析的 JSON，使用默认模板 —— {}".format(raw))
+        if plan and plan.get("template"):
+            seeded = seed_module.scaffold(
+                project_dir=project_dir,
+                goal=prompt,
+                template=plan["template"],
+                path=plan["path"],
+            )
+        else:
+            seeded = seed_module.scaffold(
+                project_dir=project_dir,
+                goal=prompt,
+                template=seed_template or ("plan" if seed_kind == "doc" else seed_module.pick_template(prompt)),
+                path=seed_path,
+                plan=plan,
+            )
         emit("已生成半成品: {}".format(seeded["path"]))
         emit("实际发送: {}".format(seeded["prompt"]))
         current = seeded["prompt"]

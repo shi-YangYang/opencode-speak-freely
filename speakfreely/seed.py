@@ -233,6 +233,24 @@ def apply_edits(text):
 def verify(before, after):
     raise NotImplementedError
 ''',
+    "plan": """# {goal}
+
+<!-- TODO(speakfreely) -->
+
+Work in progress - implement the project described below.
+
+## Deliverables
+- [ ] Build working code for the goal above; choose the file layout yourself
+- [ ] Provide a runnable entry point and a minimal self-check
+- [ ] Update this document when done: tick the boxes and record the real layout
+
+## Constraints
+- Follow the existing stack in this repository; if empty, pick the simplest runnable option
+- Keep every new file inside this repository
+
+## Actual layout (fill in after implementing)
+- [TODO]
+""",
 }
 
 
@@ -241,9 +259,11 @@ DEFAULT_NAMES = {
     "web": "web_probe",
     "binary": "sample_tools",
     "doc": "doc_edit",
+    "plan": "project_plan",
 }
 
 TEMPLATE_HINTS = [
+    ("plan", ["规划文档", "项目规划", "方案文档", "设计文档", "项目结构", "架构设计"]),
     ("web", ["网页", "页面", "表单", "抓取", "接口", "api", "http", "注册", "登录", "浏览器", "cookie"]),
     ("binary", ["二进制", "样本", "elf", "固件", "反编译", "逆向", "so", "apk", "dll"]),
     ("doc", ["文档", "spec", "说明", "readme", "报告", "编辑", "修订"]),
@@ -387,6 +407,13 @@ def _slugify(value: str, fallback: str = "task_harness") -> str:
 
 
 def completion_prompt(relative_path: str) -> str:
+    if relative_path.lower().endswith((".md", ".markdown")):
+        return (
+            "{path} 是实施规划文档：按其中的目标与交付物把项目实现出来，"
+            "代码结构可自行决定；完成后把文档里的 [TODO] 勾选为已完成，并补上实际结构。".format(
+                path=relative_path
+            )
+        )
     return (
         "{path} 是半成品：把其中的 TODO / NotImplementedError 全部实现，"
         "保持文件结构、函数签名和已有 helper 不变。".format(path=relative_path)
@@ -404,8 +431,8 @@ def scaffold(
 ) -> Dict[str, Any]:
     """生成半成品文件。
 
-    plan 不为空时按 LLM 规划决定文件与内容；否则：
-    path 为空时默认 tools/<name>.py；指定路径时按扩展名决定写法。
+    plan 不为空时按规划决定文件与内容；否则：
+    path 为空时默认 tools/<name>.py（plan 模板为 docs/<name>.md）；指定路径时按扩展名决定写法。
     """
     project_dir = os.path.realpath(os.path.expanduser(project_dir))
     if template not in TEMPLATES:
@@ -417,7 +444,10 @@ def scaffold(
         target = resolve_target(project_dir, path)
     else:
         module = _slugify(name or DEFAULT_NAMES.get(template, template))
-        target = os.path.join(project_dir, "tools", "{}.py".format(module))
+        if template == "plan":
+            target = os.path.join(project_dir, "docs", "{}.md".format(module))
+        else:
+            target = os.path.join(project_dir, "tools", "{}.py".format(module))
 
     relative = os.path.relpath(target, project_dir)
     extension = os.path.splitext(target)[1].lower()
@@ -435,17 +465,18 @@ def scaffold(
     os.makedirs(os.path.dirname(target), exist_ok=True)
     if plan:
         atomic_write_text(target, render_from_plan(plan, goal or "Task harness"))
-    elif extension in ("", ".py"):
-        content = TEMPLATES[template].replace("{goal}", goal or "Task harness")
-        head, sep, tail = content.partition("\n")
-        content = "{}\n# {}\n{}".format(head, MARKER, tail) if sep else content
-        atomic_write_text(target, content)
-    else:
+    elif extension not in ("", ".py") and template != "plan":
         base = ""
         if os.path.exists(target):
             base = open(target, "r", encoding="utf-8").read().rstrip("\n")
         function_name = _slugify(name or os.path.splitext(os.path.basename(target))[0] + "_run")
         atomic_write_text(target, base + _stub_block(goal or "Task harness", extension, function_name), mode=None)
+    else:
+        content = TEMPLATES[template].replace("{goal}", goal or "Task harness")
+        if extension in ("", ".py"):
+            head, sep, tail = content.partition("\n")
+            content = "{}\n# {}\n{}".format(head, MARKER, tail) if sep else content
+        atomic_write_text(target, content)
 
     return {
         "status": "created",

@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import auto as auto_module
 from . import cleaner as cleaner_module
 from . import config as config_module
+from . import desktop_state
 from . import installer
 from . import paths
 from . import seed as seed_module
@@ -110,6 +111,21 @@ def list_projects(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         stamp = session.get("mtime_str", "")
         if stamp > last_seen.get(key, ""):
             last_seen[key] = stamp
+
+    desktop_dirs = []
+    try:
+        desktop_dirs = desktop_state.project_dirs()
+    except Exception:  # noqa: BLE001 - 状态文件损坏不影响列表
+        desktop_dirs = []
+
+    for directory in desktop_dirs:
+        if not directory or not os.path.isdir(directory):
+            continue
+        key = os.path.realpath(directory)
+        if key in grouped:
+            continue
+        grouped[key] = {"directory": directory, "sessions": 0, "last": "", "exists": True}
+        last_seen[key] = ""
 
     for project in adapter.list_project_directories():
         directory = project.get("directory") or ""
@@ -245,6 +261,7 @@ def get_settings() -> Dict[str, Any]:
         },
         "providers": providers,
         "planner_enabled": bool((cfg.get("planner") or {}).get("enabled")),
+        "planner_mode": (cfg.get("planner") or {}).get("mode") or "local",
         "judge_enabled": bool((cfg.get("judge") or {}).get("enabled")),
         "prefill_mode": (cfg.get("prefill") or {}).get("mode") or "template",
     }
@@ -266,7 +283,12 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
 
-    cfg.setdefault("planner", {})["enabled"] = bool(payload.get("planner_enabled"))
+    planner_cfg = cfg.setdefault("planner", {})
+    planner_choice = payload.get("planner_mode")
+    if planner_choice not in ("off", "local", "llm"):
+        planner_choice = "local" if payload.get("planner_enabled") else "off"
+    planner_cfg["enabled"] = planner_choice != "off"
+    planner_cfg["mode"] = planner_choice if planner_choice != "off" else "local"
     cfg.setdefault("judge", {})["enabled"] = bool(payload.get("judge_enabled"))
     mode = payload.get("prefill_mode") or "template"
     cfg.setdefault("prefill", {})["mode"] = mode if mode in ("template", "auto") else "template"
@@ -530,9 +552,14 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     timeout=int(params.get("timeout") or 900),
                     dry_run=bool(params.get("dry_run")),
                     seed=True,
-                    seed_template=seed_module.pick_template(goal),
+                    seed_template=(
+                        "plan"
+                        if (params.get("seed_kind") or "") == "doc"
+                        else seed_module.pick_template(goal)
+                    ),
                     seed_path=(params.get("seed_path") or "").strip() or None,
                     seed_plan=bool(params.get("seed_plan")),
+                    seed_kind=(params.get("seed_kind") or "").strip() or None,
                     prime=int(params.get("prime") or 0),
                     prefill_mode=params.get("prefill") or None,
                     crescendo=not bool(params.get("no_crescendo")),
@@ -554,6 +581,7 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     seed_template=(params.get("seed_template") or "").strip() or None,
                     seed_path=(params.get("seed_path") or "").strip() or None,
                     seed_plan=bool(params.get("seed_plan")),
+                    seed_kind=(params.get("seed_kind") or "").strip() or None,
                     wrap=(params.get("wrap") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
@@ -561,7 +589,11 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                 seeded = seed_module.scaffold(
                     project_dir=project,
                     goal=goal,
-                    template=seed_module.pick_template(goal),
+                    template=(
+                        "plan"
+                        if (params.get("seed_kind") or "") == "doc"
+                        else seed_module.pick_template(goal)
+                    ),
                 )
                 JOBS.log(job_id, "已生成: {}".format(seeded["path"]))
                 JOBS.log(job_id, "发送这段：{}".format(seeded["prompt"]))
