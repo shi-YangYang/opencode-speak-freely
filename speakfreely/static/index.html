@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>speakfreely</title>
+<link rel="icon" href="data:," />
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
@@ -20,6 +21,7 @@
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
   main { display: grid; grid-template-columns: clamp(400px, 33%, 560px) minmax(0, 1fr); gap: 14px; padding: 14px;
          height: calc(100vh - 90px); overflow: hidden; align-items: stretch; }
+  main[hidden] { display: none; }
   /* 顶部页签 */
   .tabs { display: flex; gap: 6px; padding: 8px 16px 0; background: var(--panel);
           border-bottom: 1px solid var(--border); }

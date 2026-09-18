@@ -352,6 +352,11 @@ class TestFrontend(unittest.TestCase):
                       "clean-backups", "clean-log", "btn-clean-preview"):
             self.assertIn(token, html, token)
 
+    def test_hidden_main_actually_hides(self):
+        # 曾经的 bug：main{display:grid} 覆盖 [hidden]，切页签画面不变
+        html = open(self.HTML, encoding="utf-8").read()
+        self.assertIn("main[hidden]", html)
+
     def test_inline_js_syntax(self):
         import re
         import shutil
