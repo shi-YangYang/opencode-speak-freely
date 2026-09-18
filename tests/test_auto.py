@@ -434,6 +434,66 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertIn("def build_app():", content)
         self.assertIn("raise NotImplementedError", content)
 
+    def test_local_planner_is_deterministic_and_offline(self):
+        from speakfreely import planner
+
+        local = planner.LocalPlanner()
+        plan = local.plan("把 reg 的 outlook 注册流程整理成脚本", self.temp)
+        self.assertEqual(plan["path"], "tools/reg_outlook.py")
+        self.assertEqual(plan["template"], "web")
+        self.assertFalse(local.last_refused)
+        self.assertIn("未调用模型", local.last_raw)
+
+        empty = planner.LocalPlanner().plan("", self.temp)
+        self.assertTrue(empty["path"].startswith("tools/"))
+
+    def test_local_planner_plan_mode(self):
+        from speakfreely import planner
+
+        plan = planner.LocalPlanner().plan("用 Python 写一个 csv2json 小工具", self.temp, prefer="plan")
+        self.assertTrue(plan["path"].startswith("docs/"))
+        self.assertTrue(plan["path"].endswith(".md"))
+        self.assertEqual(plan["template"], "plan")
+        self.assertEqual(plan["language"], "markdown")
+
+    def test_markdown_scaffold_and_prompt(self):
+        from speakfreely import seed
+
+        result = seed.scaffold(self.temp, goal="用 Python 写一个 csv2json 小工具", template="plan")
+        self.assertTrue(result["path"].endswith(os.path.join("docs", "project_plan.md")))
+        content = open(result["path"], encoding="utf-8").read()
+        self.assertIn("csv2json", content)
+        self.assertIn("Deliverables", content)
+        self.assertIn(seed.MARKER, content)
+        self.assertNotIn("NotImplementedError", content)
+        self.assertIn("实施规划文档", result["prompt"])
+        self.assertIn("docs/project_plan.md", result["prompt"])
+
+    def test_from_config_defaults_to_local(self):
+        from speakfreely import planner
+
+        self.assertIsNone(planner.from_config({"planner": {"enabled": False}}))
+        default = planner.from_config({"planner": {"enabled": True}})
+        self.assertIsInstance(default, planner.LocalPlanner)
+        llm = planner.from_config({"planner": {"enabled": True, "mode": "llm"}})
+        self.assertIsInstance(llm, planner.LocalPlanner)  # 无 endpoint 时回退本地
+
+    def test_planner_marks_refusal(self):
+        from speakfreely import planner
+
+        refusing = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m",
+            chat_fn=lambda *a, **k: "抱歉，我不能帮你规划这个任务。",
+        )
+        self.assertIsNone(refusing.plan("某目标", self.temp))
+        self.assertTrue(refusing.last_refused)
+
+        broken = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m", chat_fn=lambda *a, **k: "not json"
+        )
+        self.assertIsNone(broken.plan("某目标", self.temp))
+        self.assertFalse(broken.last_refused)
+
     def test_planner_with_fake_chat(self):
         from speakfreely import planner
 

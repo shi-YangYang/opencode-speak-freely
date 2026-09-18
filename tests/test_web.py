@@ -365,16 +365,23 @@ class TestApi(WebCase):
     def test_settings_defaults_and_save(self):
         _, data = self.get("/api/settings")
         self.assertFalse(data["llm"]["api_key_configured"])
-        self.assertFalse(data["planner_enabled"])
+        self.assertTrue(data["planner_enabled"])  # 默认本地规则规划
+        self.assertEqual(data["planner_mode"], "local")
 
         _, saved = self.post("/api/settings", {
             "llm": {"endpoint": "http://127.0.0.1:9/v1", "model": "mock", "api_key": "sk-abc", "timeout": 12},
             "planner_enabled": True,
+            "planner_mode": "llm",
             "judge_enabled": True,
             "prefill_mode": "auto",
         })
         self.assertTrue(saved["llm"]["api_key_configured"])
         self.assertTrue(saved["planner_enabled"])
+        self.assertEqual(saved["planner_mode"], "llm")
+
+        _, off = self.post("/api/settings", {"planner_mode": "off"})
+        self.assertFalse(off["planner_enabled"])
+        self.assertEqual(off["planner_mode"], "local")
         self.assertEqual(saved["prefill_mode"], "auto")
 
         # 空密钥 = 保留原密钥

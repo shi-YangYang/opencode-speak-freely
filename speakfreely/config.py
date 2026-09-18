@@ -27,7 +27,8 @@ DEFAULTS: Dict[str, Any] = {
         "timeout": 20,
     },
     "planner": {
-        "enabled": False,
+        "enabled": True,
+        "mode": "local",  # local | llm
         "endpoint": "",
         "api_key": "",
         "model": "",
