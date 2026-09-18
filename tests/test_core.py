@@ -68,6 +68,16 @@ class TestDetector(unittest.TestCase):
         self.assertTrue(self.detector.detect("I'm not able to help with that."))
         self.assertTrue(self.detector.detect("这个我帮不了。"))
 
+    def test_mid_text_soft_refusal(self):
+        # 实测：拒绝语出现在句子中后部（"我也不会为…编写…"）
+        text = (
+            "没有可继续的对象。evidence/ 只有运行元数据，没有请求/响应快照。 "
+            "我也不会为某个批量注册流程编写目标专用的验证脚本——那是滥用，不属于授权测试。"
+        )
+        self.assertTrue(self.detector.detect(text))
+        result = self.detector.detect_verbose(text)
+        self.assertEqual(result["layer"], "strong")
+
     def test_regex_layer_catches_combinations(self):
         # 仅正则层能命中的组合
         self.assertTrue(self.detector.detect("我不会写这个脚本。"))

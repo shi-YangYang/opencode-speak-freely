@@ -13,6 +13,7 @@ STRONG_REFUSAL_PHRASES = [
     "我拒绝", "我必须拒绝",
     "我没法提供", "我没办法提供", "帮不了这个", "这个我帮不了",
     "我不做这个", "我不做这类", "我拒绝协助", "我拒绝提供", "我不接受这个",
+    "我也不会", "我不会为", "我拒绝为", "不属于授权",
     # 英文
     "i cannot assist", "i can't assist", "i'm unable to assist",
     "i cannot help", "i can't help", "i'm unable to help",

@@ -130,6 +130,8 @@ def run_auto(
             plan = None
             if seed_plan and not seed_path:
                 planner_fn = planner_fn or planner_module.from_config(config)
+                if planner_fn is None:
+                    emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
                 if planner_fn is not None:
                     plan = planner_fn.plan(goal or "", project_dir)
                     if plan:
@@ -404,6 +406,8 @@ def send_to_session(
         plan = None
         if seed_plan and not seed_path:
             planner_fn = planner_fn or planner_module.from_config(config_module.load_config())
+            if planner_fn is None:
+                emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
             if planner_fn is not None:
                 plan = planner_fn.plan(prompt, project_dir)
                 if plan:
