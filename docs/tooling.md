@@ -152,11 +152,13 @@ Web UI 的关键交互用无头 Chrome（CDP）真实点击验证，脚本：
 
 ```bash
 ./scripts/speakfreely-web --no-browser &
-node scripts/browser-smoke.js            # 默认 http://127.0.0.1:8788/
+node scripts/browser-smoke.js                                  # 默认 URL + 列表第一个项目
+node scripts/browser-smoke.js http://127.0.0.1:8788/ <项目目录>  # 指定项目（推荐，项目需有拒绝）
 ```
 
 检查：页签切换（计算样式）、扫描拒绝、列出拒绝条目、下拉菜单位置、
 预览提示、控制台 0 报错。依赖本机 Chrome + Node。
+默认项目没有含拒绝的会话时，会跳过深层检查而不是报失败。
 
 ## 改造后的验证方法
 
