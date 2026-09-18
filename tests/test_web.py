@@ -258,6 +258,71 @@ class TestApi(WebCase):
             self.get("/api/message?id=ses_test&index=999")
         self.assertEqual(ctx.exception.code, 500)
 
+    def _add_refusal(self, message_id, part_id, text, timestamp=2):
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO message VALUES (?,?,?,?,?)",
+                (message_id, "ses_test", timestamp, timestamp, json.dumps({"role": "assistant"})),
+            )
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                (part_id, message_id, "ses_test", timestamp, timestamp,
+                 json.dumps({"type": "text", "text": text})),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_refusals_session_endpoint(self):
+        _, data = self.get("/api/refusals?session=ses_test")
+        self.assertEqual(len(data["refusals"]), 1)
+        self.assertEqual(data["refusals"][0]["index"], 0)
+
+    def test_refusals_project_scan(self):
+        _, data = self.get("/api/refusals?project=" + urllib.request.quote(self.project))
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], "ses_test")
+        self.assertEqual(data[0]["count"], 1)
+
+    def test_selective_clean_only_chosen(self):
+        self._add_refusal("msg_2", "prt_2", "抱歉，我不能帮你做这个。", timestamp=2)
+
+        _, data = self.get("/api/refusals?session=ses_test")
+        lines = [item["line"] for item in data["refusals"]]
+        self.assertEqual(len(lines), 2)
+
+        _, result = self.post(
+            "/api/clean",
+            {"session": "ses_test", "selected": [lines[1]]},
+        )
+        entry = result["sessions"][0]
+        self.assertTrue(entry["modified"])
+        self.assertEqual(len(entry["details"]), 1)
+
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            rows = {row[0]: json.loads(row[1])["text"] for row in
+                    conn.execute("SELECT id, data FROM part WHERE id IN ('prt_text','prt_2')")}
+        finally:
+            conn.close()
+        self.assertIn("抱歉，我不能帮你做这个。", rows["prt_2"])       # 未选中的保持原样
+        self.assertNotIn("抱歉，我不能帮你实现这个协议。", rows["prt_text"])  # 选中的被替换
+
+    def test_backups_and_restore(self):
+        _, backups = self.get("/api/backups")
+        self.assertEqual(backups, [])
+
+        self.post("/api/clean", {"session": "ses_test"})
+        _, backups = self.get("/api/backups")
+        self.assertEqual(len(backups), 1)
+
+        _, restored = self.post("/api/restore", {"backup": backups[0]["path"]})
+        self.assertTrue(restored["ok"])
+
+        _, data = self.get("/api/session?id=ses_test")
+        self.assertEqual(data["refusals"], 1)  # 原文回来了
+
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
         self.assertEqual(

@@ -19,7 +19,34 @@
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
   main { display: grid; grid-template-columns: clamp(400px, 33%, 560px) minmax(0, 1fr); gap: 14px; padding: 14px;
-         height: calc(100vh - 48px); overflow: hidden; align-items: stretch; }
+         height: calc(100vh - 90px); overflow: hidden; align-items: stretch; }
+  /* 顶部页签 */
+  .tabs { display: flex; gap: 6px; padding: 8px 16px 0; background: var(--panel);
+          border-bottom: 1px solid var(--border); }
+  .tab { width: auto; padding: 6px 16px; border-radius: 8px 8px 0 0; border: 1px solid var(--border);
+         border-bottom: none; background: transparent; color: var(--muted); }
+  .tab.active { background: var(--bg); color: var(--text); }
+  .tab:hover { background: #1b2331; }
+  /* 清理页列表 */
+  .list-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
+               cursor: pointer; border: 1px solid transparent; }
+  .list-item:hover { background: #1a2130; }
+  .list-item.active { border-color: var(--accent); background: #16203a; }
+  .list-item .item-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                          white-space: nowrap; font-size: 13px; }
+  .pill { flex: 0 0 auto; font-size: 11px; background: #33202a; color: var(--err);
+          border-radius: 10px; padding: 1px 8px; }
+  .refusal-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 6px;
+                  margin-bottom: 4px; background: #10141b; cursor: pointer; }
+  .refusal-item:hover { background: #1a2130; }
+  .refusal-item input { width: auto; margin-top: 3px; }
+  .refusal-item .idx { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
+  .refusal-item .txt { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden;
+                       text-overflow: ellipsis; white-space: nowrap; }
+  .log-small { font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #0b0e13;
+               border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+               min-height: 80px; max-height: 240px; overflow: auto; }
+  button.mini { width: auto; padding: 3px 10px; font-size: 12px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
            padding: 14px 14px 26px; height: 100%; overflow-y: auto; overflow-x: hidden; }
   .panel.left { display: flex; flex-direction: column; padding-bottom: 14px; }
@@ -128,7 +155,12 @@
   </div>
 </header>
 
-<main>
+<nav class="tabs">
+  <button class="tab active" data-view="run">运行</button>
+  <button class="tab" data-view="clean">清理拒绝</button>
+</nav>
+
+<main id="view-run">
   <section class="panel left">
     <label>项目</label>
     <div class="dd" id="dd-project">
@@ -223,6 +255,45 @@
         <li><code>speakfreely report</code>：看各模型的拒绝率与花费</li>
       </ul>
     </div>
+  </section>
+</main>
+
+<main id="view-clean" hidden>
+  <section class="panel left clean">
+    <label>项目</label>
+    <div class="dd" id="dd-clean-project">
+      <button type="button" class="dd-btn">加载中…</button>
+      <div class="dd-menu" hidden></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="btn-scan">扫描拒绝</button>
+    </div>
+    <label>含拒绝的会话</label>
+    <div id="clean-sessions" class="muted">选择项目后点「扫描拒绝」</div>
+  </section>
+
+  <section class="panel right clean">
+    <label>拒绝消息（勾选要替换的；点击文字可看全文）</label>
+    <div class="row" style="margin:0 0 8px">
+      <select id="clean-mode" style="width:100%;background:#0d1016;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px">
+        <option value="template">替换为默认模板文案</option>
+        <option value="custom">替换为自定义文案</option>
+        <option value="auto">用 LLM 生成替换文案</option>
+      </select>
+    </div>
+    <input id="clean-custom" placeholder="自定义替换文案" hidden />
+    <div id="clean-list" class="muted" style="margin-top:8px">先选择一个会话</div>
+
+    <div class="row">
+      <button class="primary" id="btn-clean-preview">预览</button>
+      <button id="btn-clean-run">执行替换</button>
+    </div>
+
+    <label>备份 / 恢复</label>
+    <div id="clean-backups" class="muted">暂无</div>
+
+    <label>结果</label>
+    <div id="clean-log" class="log-small">—</div>
   </section>
 </main>
 
@@ -559,12 +630,153 @@ $("btn-dry").addEventListener("click", () => run(true));
 $("btn-clean").addEventListener("click", cleanSession);
 $("btn-watch").addEventListener("click", toggleWatch);
 $("btn-refresh").addEventListener("click", async () => { await loadStatus(); await loadProjects(); await loadModels(); log("已刷新"); });
+$("btn-scan").addEventListener("click", scanRefusals);
+$("btn-clean-preview").addEventListener("click", () => runClean(true));
+$("btn-clean-run").addEventListener("click", () => runClean(false));
+$("clean-mode").addEventListener("change", () => {
+  $("clean-custom").hidden = $("clean-mode").value !== "custom";
+});
+
+/* ── 页签切换 ───────────────────────────────────────────────────────── */
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
+    $("view-run").hidden = tab.dataset.view !== "run";
+    $("view-clean").hidden = tab.dataset.view !== "clean";
+    if (tab.dataset.view === "clean") { loadCleanProjects(); loadBackups(); }
+  });
+});
+
+/* ── 清理拒绝页 ─────────────────────────────────────────────────────── */
+const cleanState = { session: null, selected: new Set() };
+
+const cleanProjectDD = Dropdown("dd-clean-project", {
+  placeholder: "请选择项目",
+  onChange: () => { $("clean-sessions").innerHTML = "点「扫描拒绝」开始"; },
+});
+
+async function loadCleanProjects() {
+  const projects = await api("/api/projects");
+  cleanProjectDD.setItems(projects.map((p) => ({
+    value: p.directory, label: p.directory, sub: `${p.sessions} 个会话`,
+  })));
+  if (projects.length && !cleanProjectDD.getValue()) cleanProjectDD.setValue(projects[0].directory);
+}
+
+async function scanRefusals() {
+  const project = cleanProjectDD.getValue();
+  if (!project) { $("clean-sessions").innerHTML = "请先选择项目"; return; }
+  $("clean-sessions").innerHTML = '<div class="muted">扫描中…（会话多时需要几秒）</div>';
+  try {
+    const list = await api("/api/refusals?project=" + encodeURIComponent(project));
+    if (!list.length) { $("clean-sessions").innerHTML = '<div class="muted">该项目的会话没有检测到拒绝</div>'; return; }
+    $("clean-sessions").innerHTML = list.map((item) =>
+      `<div class="list-item" data-id="${esc(item.id)}">
+         <span class="item-main" data-tip="${esc(item.title)} · ${esc(item.updated)}">${esc(item.title)}</span>
+         <span class="pill">${item.count} 处</span>
+       </div>`).join("");
+    bindTooltips($("clean-sessions"));
+    $("clean-sessions").querySelectorAll(".list-item").forEach((node) =>
+      node.addEventListener("click", () => selectCleanSession(node.dataset.id)));
+  } catch (e) {
+    $("clean-sessions").innerHTML = "扫描失败: " + esc(e.message);
+  }
+}
+
+async function selectCleanSession(id) {
+  cleanState.session = id;
+  cleanState.selected = new Set();
+  document.querySelectorAll("#clean-sessions .list-item").forEach((node) =>
+    node.classList.toggle("active", node.dataset.id === id));
+  $("clean-list").innerHTML = '<div class="muted">加载中…</div>';
+  const data = await api("/api/refusals?session=" + encodeURIComponent(id));
+  if (!data.refusals.length) { $("clean-list").innerHTML = '<div class="muted">没有拒绝</div>'; return; }
+  $("clean-list").innerHTML = data.refusals.map((item) =>
+    `<label class="refusal-item">
+       <input type="checkbox" data-line="${item.line}" checked>
+       <span class="idx">#${item.line}</span>
+       <span class="txt" data-tip="${esc(item.excerpt)}">${esc(item.excerpt)}</span>
+       <button class="mini" type="button" data-full="${item.index}">全文</button>
+     </label>`).join("");
+  cleanState.selected = new Set(data.refusals.map((item) => item.line));
+  bindTooltips($("clean-list"));
+  $("clean-list").querySelectorAll("input[type=checkbox]").forEach((box) =>
+    box.addEventListener("change", () => {
+      box.checked ? cleanState.selected.add(Number(box.dataset.line)) : cleanState.selected.delete(Number(box.dataset.line));
+    }));
+  $("clean-list").querySelectorAll("button[data-full]").forEach((btn) =>
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showMessage(cleanState.session, btn.dataset.full);
+    }));
+}
+
+async function loadBackups() {
+  try {
+    const backups = await api("/api/backups");
+    if (!backups.length) { $("clean-backups").innerHTML = '<div class="muted">暂无备份</div>'; return; }
+    $("clean-backups").innerHTML = backups.slice(0, 6).map((item) =>
+      `<div class="list-item">
+         <span class="item-main">${esc(item.mtime_str)} · ${Math.round(item.size / 1048576)}MB</span>
+         <button class="mini" data-path="${esc(item.path)}">恢复</button>
+       </div>`).join("");
+    $("clean-backups").querySelectorAll("button[data-path]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("从该备份恢复？当前数据库会被覆盖。")) return;
+        try {
+          await api("/api/restore", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backup: btn.dataset.path }) });
+          $("clean-log").textContent = "已从备份恢复:
+" + btn.dataset.path;
+        } catch (e) { $("clean-log").textContent = "恢复失败: " + e.message; }
+      }));
+  } catch (e) { $("clean-backups").innerHTML = '<div class="muted">备份读取失败</div>'; }
+}
+
+function cleanPayload(dryRun) {
+  const mode = $("clean-mode").value;
+  const payload = {
+    session: cleanState.session,
+    dry_run: dryRun,
+    selected: Array.from(cleanState.selected),
+  };
+  if (mode === "custom") payload.replacement = $("clean-custom").value.trim();
+  if (mode === "auto") payload.prefill = "auto";
+  return payload;
+}
+
+async function runClean(dryRun) {
+  if (!cleanState.session) { $("clean-log").textContent = "请先选择一个会话"; return; }
+  if (!cleanState.selected.size) { $("clean-log").textContent = "请至少勾选一条拒绝"; return; }
+  const mode = $("clean-mode").value;
+  if (mode === "custom" && !$("clean-custom").value.trim()) { $("clean-log").textContent = "请填写自定义文案"; return; }
+  try {
+    const result = await api("/api/clean", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cleanPayload(dryRun)),
+    });
+    const entry = (result.sessions || [])[0] || {};
+    const lines = [dryRun ? "预览（未修改）：" : "执行结果："];
+    (entry.details || []).forEach((detail) => {
+      lines.push(`  #${detail.line_num} ${detail.change_type}${detail.new_content ? " → " + detail.new_content.slice(0, 60) : ""}`);
+    });
+    if (!entry.modified) lines.push("  无需修改");
+    if (entry.backup) lines.push("  备份: " + entry.backup);
+    if (entry.error) lines.push("  错误: " + entry.error);
+    $("clean-log").textContent = lines.join("\n");
+    if (!dryRun) { await selectCleanSession(cleanState.session); await loadBackups(); }
+  } catch (e) {
+    $("clean-log").textContent = "失败: " + e.message;
+  }
+}
 
 (async function init() {
   await loadStatus();
   await loadStages();
   await loadProjects();
   await loadModels();
+  await loadCleanProjects();
   updateRunButton();
   setInterval(loadStatus, 15000);
 })();
