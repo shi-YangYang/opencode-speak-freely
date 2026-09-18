@@ -347,16 +347,41 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertEqual(result["relative"], os.path.join("tools", "task_harness.py"))
         self.assertIn("task_harness.py", result["prompt"])
 
-    def test_scaffold_does_not_overwrite(self):
+    def test_scaffold_refuses_unmanaged_file(self):
         from speakfreely import seed
 
         first = seed.scaffold(self.temp, goal="A")
         with open(first["path"], "w", encoding="utf-8") as stream:
             stream.write("USER OWNED\n")
 
+        with self.assertRaises(ValueError):
+            seed.scaffold(self.temp, goal="B")
+        self.assertEqual(open(first["path"], encoding="utf-8").read(), "USER OWNED\n")
+
+    def test_scaffold_second_run_is_idempotent(self):
+        from speakfreely import seed
+
+        first = seed.scaffold(self.temp, goal="A")
+        content = open(first["path"], encoding="utf-8").read()
         second = seed.scaffold(self.temp, goal="B")
         self.assertEqual(second["status"], "exists")
-        self.assertEqual(open(second["path"], encoding="utf-8").read(), "USER OWNED\n")
+        self.assertEqual(open(second["path"], encoding="utf-8").read(), content)
+
+    def test_scaffold_custom_path_by_extension(self):
+        from speakfreely import seed
+
+        py = seed.scaffold(self.temp, goal="补充实现", path="src/feature.py")
+        self.assertTrue(py["path"].endswith(os.path.join("src", "feature.py")))
+        self.assertIn("NotImplementedError", open(py["path"], encoding="utf-8").read())
+
+        md = seed.scaffold(self.temp, goal="整理方案", template="doc", path="docs/plan.md")
+        content = open(md["path"], encoding="utf-8").read()
+        self.assertIn(seed.MARKER, content)
+        self.assertIn("整理方案", content)
+
+        js = seed.scaffold(self.temp, goal="对接接口", path="webui/flow.js")
+        content = open(js["path"], encoding="utf-8").read()
+        self.assertIn("// " + seed.MARKER, content)
 
     def test_auto_seed_uses_completion_prompt(self):
         prompts = []
@@ -375,6 +400,54 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         )
         self.assertIn("task_harness.py", prompts[0])
         self.assertIn("TODO", prompts[0])
+
+    def test_planner_parses_and_validates(self):
+        from speakfreely import planner
+
+        plan = planner.parse_response(
+            '{"path": "webui/app.py", "language": "python", '
+            '"steps": ["搭建页面骨架", "接入数据源"], "functions": ["build_app", "load_data"]}'
+        )
+        self.assertEqual(plan["path"], "webui/app.py")
+        self.assertEqual(len(plan["steps"]), 2)
+
+        self.assertIsNone(planner.parse_response('{"path": "/etc/passwd", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "../outside.py", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "a.exe", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "a.py", "steps": []}'))
+        self.assertIsNone(planner.parse_response("not json"))
+
+    def test_scaffold_uses_plan(self):
+        from speakfreely import seed
+
+        plan = {
+            "path": "webui/app.py",
+            "language": "python",
+            "steps": ["搭建页面骨架", "接入数据源", "补测试"],
+            "functions": ["build_app", "load_data"],
+        }
+        result = seed.scaffold(self.temp, goal="做一个账号管理 WebUI", plan=plan)
+        self.assertTrue(result["path"].endswith(os.path.join("webui", "app.py")))
+        content = open(result["path"], encoding="utf-8").read()
+        self.assertIn("做一个账号管理 WebUI", content)
+        self.assertIn("搭建页面骨架", content)
+        self.assertIn("def build_app():", content)
+        self.assertIn("raise NotImplementedError", content)
+
+    def test_planner_with_fake_chat(self):
+        from speakfreely import planner
+
+        fake = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m",
+            chat_fn=lambda *a, **k: '{"path": "docs/plan.md", "steps": ["列现状"], "functions": []}',
+        )
+        plan = fake.plan("整理现状", self.temp)
+        self.assertEqual(plan["path"], "docs/plan.md")
+
+        failing = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m", chat_fn=lambda *a, **k: "sorry"
+        )
+        self.assertIsNone(failing.plan("x", self.temp))
 
     def test_seed_templates_available(self):
         from speakfreely import seed
@@ -415,7 +488,10 @@ class TestSeed(HomeIsolation, unittest.TestCase):
 
         seed.scaffold_file(self.temp, real_file, goal="补充文档")
         content = open(real_file, encoding="utf-8").read()
-        self.assertIn("<!-- {}: 补充文档 -->".format(seed.MARKER), content)
+        self.assertIn("# 标题", content)                 # 原有内容保留
+        self.assertIn("# 补充文档", content)             # 目标作为标题
+        self.assertIn("<!-- {} -->".format(seed.MARKER), content)
+        self.assertIn("[TODO]", content)
 
     def test_pick_template(self):
         from speakfreely import seed
@@ -819,6 +895,46 @@ class TestSendToSession(unittest.TestCase):
         self.assertTrue(files)                          # 半成品文件已生成
         content = open(os.path.join(tools_dir, files[0]), encoding="utf-8").read()
         self.assertIn("把注册流程整理成可运行脚本", content)  # 目标写进了文件
+
+    def test_wrap_todo_rewrites_message(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "好的，先拆解。", "cost": 0.0}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="梳理注册流程",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{}]},
+            db_path=self.db_path,
+            judge=False,
+            wrap="todo",
+        )
+        self.assertTrue(result["ok"])
+        self.assertIn("项目当前待办", prompts[0])
+        self.assertIn("梳理注册流程", prompts[0])
+        self.assertIn("todo 工具", prompts[0])
+
+    def test_wrap_none_sends_raw(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "ok", "cost": 0.0}
+
+        auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="原文请求",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{}]},
+            db_path=self.db_path,
+            judge=False,
+        )
+        self.assertEqual(prompts[0], "原文请求")
 
     def test_gives_up(self):
         def fake_runner(prompt, **kwargs):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -20,13 +21,51 @@ def chat(
     timeout: float = 30,
     max_tokens: int = 256,
     temperature: float = 0.0,
+    retries: int = 2,
 ) -> str:
-    """调用 {endpoint}/chat/completions，返回第一条回复文本。"""
+    """调用 {endpoint}/chat/completions；空内容或网络错误时自动重试。"""
     if not endpoint:
         raise LLMError("未配置 LLM endpoint")
     if not model:
         raise LLMError("未配置 LLM model")
 
+    last_error: Optional[Exception] = None
+    budget = max_tokens
+    for attempt in range(max(0, retries) + 1):
+        try:
+            content = _chat_once(
+                messages=messages,
+                endpoint=endpoint,
+                api_key=api_key,
+                model=model,
+                timeout=timeout,
+                max_tokens=budget,
+                temperature=temperature,
+            )
+        except LLMError as exc:
+            last_error = exc
+            content = ""
+        if content:
+            return content
+        if attempt < retries:
+            # 推理模型可能把预算花在 reasoning 上导致 content 为空：翻倍再试
+            budget = min(budget * 2, 8000)
+            time.sleep(0.3)
+
+    if last_error is not None:
+        raise last_error
+    return ""
+
+
+def _chat_once(
+    messages: List[Dict[str, str]],
+    endpoint: str,
+    api_key: Optional[str],
+    model: str,
+    timeout: float,
+    max_tokens: int,
+    temperature: float,
+) -> str:
     url = endpoint.rstrip("/") + "/chat/completions"
     payload: Dict[str, Any] = {
         "model": model,

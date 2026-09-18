@@ -14,6 +14,44 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from speakfreely import judge as judge_module  # noqa: E402
 
 
+class TestLLMRetry(unittest.TestCase):
+    """llm.chat 在空内容时重试。"""
+
+    def test_retries_on_empty_content(self):
+        import unittest.mock as mock
+        from speakfreely import llm
+
+        responses = [
+            json.dumps({"choices": [{"message": {"content": ""}}]}).encode(),
+            json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode(),
+        ]
+
+        class FakeResponse:
+            def __init__(self, body): self._body = body
+            def read(self): return self._body
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with mock.patch.object(llm.urllib.request, "urlopen", side_effect=lambda *a, **k: FakeResponse(responses.pop(0))):
+            result = llm.chat([{"role": "user", "content": "ping"}],
+                              endpoint="http://x/v1", model="m", retries=2)
+        self.assertEqual(result, "ok")
+
+    def test_returns_empty_after_retries(self):
+        import unittest.mock as mock
+        from speakfreely import llm
+
+        class FakeResponse:
+            def read(self): return json.dumps({"choices": [{"message": {"content": ""}}]}).encode()
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with mock.patch.object(llm.urllib.request, "urlopen", return_value=FakeResponse()):
+            result = llm.chat([{"role": "user", "content": "ping"}],
+                              endpoint="http://x/v1", model="m", retries=1)
+        self.assertEqual(result, "")
+
+
 class TestShouldJudge(unittest.TestCase):
     def test_suspicious_short_text(self):
         self.assertTrue(judge_module.should_judge("这个方向涉及未授权滥用，我停在权限边界内。"))

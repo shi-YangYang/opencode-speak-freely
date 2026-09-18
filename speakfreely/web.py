@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import auto as auto_module
 from . import cleaner as cleaner_module
+from . import config as config_module
 from . import installer
 from . import paths
 from . import seed as seed_module
@@ -91,17 +92,47 @@ def _adapter(db_path: Optional[str]) -> OpenCodeDBAdapter:
 
 
 def list_projects(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    sessions = _adapter(db_path).list_sessions()
+    """会话目录 + project 表登记目录（含还没有会话的项目）。"""
+    adapter = _adapter(db_path)
     grouped: Dict[str, Dict[str, Any]] = {}
-    for session in sessions:
+    last_seen: Dict[str, str] = {}
+
+    for session in adapter.list_sessions():
         directory = session.get("directory") or ""
         if not directory or not os.path.isdir(directory):
             continue
+        key = os.path.realpath(directory)
         entry = grouped.setdefault(
-            directory,
-            {"directory": directory, "sessions": 0, "last": session.get("mtime_str", ""), "exists": os.path.isdir(directory)},
+            key,
+            {"directory": directory, "sessions": 0, "last": "", "exists": True},
         )
         entry["sessions"] += 1
+        stamp = session.get("mtime_str", "")
+        if stamp > last_seen.get(key, ""):
+            last_seen[key] = stamp
+
+    for project in adapter.list_project_directories():
+        directory = project.get("directory") or ""
+        if not directory or directory == "/" or not os.path.isdir(directory):
+            continue
+        key = os.path.realpath(directory)
+        if key in grouped:
+            continue
+        stamp = ""
+        if project.get("mtime"):
+            from datetime import datetime
+
+            stamp = datetime.fromtimestamp(project["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
+        grouped[key] = {
+            "directory": directory,
+            "sessions": 0,
+            "last": stamp,
+            "exists": True,
+        }
+        last_seen[key] = stamp
+
+    for key, entry in grouped.items():
+        entry["last"] = last_seen.get(key, entry.get("last", ""))
     return sorted(grouped.values(), key=lambda item: item["last"], reverse=True)
 
 
@@ -185,6 +216,77 @@ def _models_from_config(path: Optional[str] = None) -> List[str]:
         if models:
             return sorted(set(models))
     return []
+
+
+def get_settings() -> Dict[str, Any]:
+    from . import opencode_llm
+
+    cfg = config_module.load_config()
+    configured = cfg.get("llm") or {}
+    detected = opencode_llm.detect() or {}
+    effective = config_module.llm_settings(cfg)
+    return {
+        "llm": {
+            "endpoint": effective.get("endpoint") or "",
+            "model": effective.get("model") or "",
+            "timeout": configured.get("timeout") or 30,
+            "api_key_configured": bool(effective.get("api_key")),
+            "detected": bool(detected) and not configured.get("endpoint"),
+            "detected_provider": detected.get("provider") or "",
+        },
+        "planner_enabled": bool((cfg.get("planner") or {}).get("enabled")),
+        "judge_enabled": bool((cfg.get("judge") or {}).get("enabled")),
+        "prefill_mode": (cfg.get("prefill") or {}).get("mode") or "template",
+    }
+
+
+def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    cfg = config_module.load_config()
+    incoming = payload.get("llm") or {}
+    llm = cfg.setdefault("llm", {})
+
+    for key in ("endpoint", "model"):
+        if key in incoming:
+            llm[key] = str(incoming[key]).strip()
+    if incoming.get("api_key"):
+        llm["api_key"] = str(incoming["api_key"]).strip()
+    if incoming.get("timeout"):
+        try:
+            llm["timeout"] = float(incoming["timeout"])
+        except (TypeError, ValueError):
+            pass
+
+    cfg.setdefault("planner", {})["enabled"] = bool(payload.get("planner_enabled"))
+    cfg.setdefault("judge", {})["enabled"] = bool(payload.get("judge_enabled"))
+    mode = payload.get("prefill_mode") or "template"
+    cfg.setdefault("prefill", {})["mode"] = mode if mode in ("template", "auto") else "template"
+
+    config_module.save_config(cfg)
+    return get_settings()
+
+
+def test_llm(payload: Dict[str, Any]) -> Dict[str, Any]:
+    from . import llm as llm_module
+
+    cfg = config_module.load_config()
+    saved = cfg.get("llm") or {}
+    endpoint = (payload.get("endpoint") or saved.get("endpoint") or "").strip()
+    model = (payload.get("model") or saved.get("model") or "").strip()
+    api_key = (payload.get("api_key") or saved.get("api_key") or "").strip()
+    if not endpoint or not model:
+        return {"ok": False, "error": "请先填写 endpoint 与 model"}
+    try:
+        reply = llm_module.chat(
+            [{"role": "user", "content": "ping"}],
+            endpoint=endpoint,
+            api_key=api_key or None,
+            model=model,
+            timeout=15,
+            max_tokens=8,
+        )
+        return {"ok": True, "reply": (reply or "")[:60]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
 
 
 def list_stages() -> List[Dict[str, str]]:
@@ -419,6 +521,8 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     dry_run=bool(params.get("dry_run")),
                     seed=True,
                     seed_template=seed_module.pick_template(goal),
+                    seed_path=(params.get("seed_path") or "").strip() or None,
+                    seed_plan=bool(params.get("seed_plan")),
                     prime=int(params.get("prime") or 0),
                     prefill_mode=params.get("prefill") or None,
                     crescendo=not bool(params.get("no_crescendo")),
@@ -438,6 +542,9 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     auto_clean=params.get("auto_clean", True) is not False,
                     seed=bool(params.get("seed")),
                     seed_template=(params.get("seed_template") or "").strip() or None,
+                    seed_path=(params.get("seed_path") or "").strip() or None,
+                    seed_plan=bool(params.get("seed_plan")),
+                    wrap=(params.get("wrap") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":
@@ -601,6 +708,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(list_models())
             if parsed.path == "/api/stages":
                 return self._json(list_stages())
+            if parsed.path == "/api/settings":
+                return self._json(get_settings())
             if parsed.path == "/api/session":
                 session_id = (query.get("id") or [""])[0]
                 if not session_id:
@@ -642,6 +751,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         body = self._read_json()
         try:
+            if parsed.path == "/api/settings":
+                return self._json(save_settings(body))
+            if parsed.path == "/api/settings/test":
+                return self._json(test_llm(body))
             if parsed.path == "/api/run":
                 with _WRITE_LOCK:
                     job_id = start_run(body, self.db_path)

@@ -5,8 +5,9 @@
  * 依赖：本机 Chrome + Node.js（有全局 WebSocket）。
  * 用法：
  *   ./scripts/speakfreely-web --no-browser &        # 先启动服务
- *   node scripts/browser-smoke.js [URL]
- * 默认 URL: http://127.0.0.1:8788/
+ *   node scripts/browser-smoke.js [URL] [PROJECT_DIR]
+ * 默认 URL: http://127.0.0.1:8788/；PROJECT_DIR 用于指定要扫描的项目
+ * （省略时用列表第一个；该项目没有拒绝时会跳过深层检查）
  *
  * 检查项：
  *   1. 页面加载、两个页签存在
@@ -28,6 +29,7 @@ const CHROME_CANDIDATES = [
 const fs = require("fs");
 const CHROME = CHROME_CANDIDATES.find((p) => fs.existsSync(p));
 const URL = process.argv[2] || "http://127.0.0.1:8788/";
+const PROJECT = process.argv[3] || "";
 const DEBUG_PORT = 9432;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -100,15 +102,37 @@ function getJson(path) {
     await sleep(3000);
 
     check("页面标题", (await evaluate("document.title")) === "speakfreely");
-    check("两个页签", (await evaluate("document.querySelectorAll('.tab').length")) === 2);
+    check("三个页签", (await evaluate("document.querySelectorAll('.tab').length")) === 3);
 
     await evaluate("document.querySelector('.tab[data-view=clean]').click()");
     await sleep(400);
+    await evaluate("document.querySelector('.tab[data-view=settings]').click()");
+    await sleep(400);
+    check("切换到设置页",
+      (await evaluate("getComputedStyle(document.getElementById('view-settings')).display")) !== "none" &&
+      (await evaluate("getComputedStyle(document.getElementById('view-clean')).display")) === "none");
+    await evaluate("document.querySelector('.tab[data-view=clean]').click()");
+    await sleep(400);
+
     check(
       "切换到清理拒绝页",
       (await evaluate("getComputedStyle(document.getElementById('view-run')).display")) === "none" &&
       (await evaluate("getComputedStyle(document.getElementById('view-clean')).display")) !== "none",
     );
+
+    if (PROJECT) {
+      await evaluate("document.querySelector('#dd-clean-project .dd-btn').click()");
+      await sleep(300);
+      const found = await evaluate(
+        `!!document.querySelector('#dd-clean-project .dd-item[data-value="${PROJECT}"]')`);
+      if (found) {
+        await evaluate(
+          `document.querySelector('#dd-clean-project .dd-item[data-value="${PROJECT}"]').click()`);
+        await sleep(500);
+      } else {
+        console.log(`（未在列表中找到 ${PROJECT}，用默认项目）`);
+      }
+    }
 
     await evaluate("document.getElementById('btn-scan').click()");
     let items = 0;
@@ -118,7 +142,12 @@ function getJson(path) {
       const busy = await evaluate("document.getElementById('clean-sessions').textContent.includes('扫描中')");
       if (items >= 1 || !busy) break;
     }
-    check("扫描出含拒绝的会话", items >= 1, `找到 ${items} 个`);
+    if (items === 0) {
+      console.log("（该项目当前没有含拒绝的会话，跳过深层检查；" +
+        "可用 node scripts/browser-smoke.js <URL> <项目目录> 指定项目）");
+    } else {
+      check("扫描出含拒绝的会话", true, `找到 ${items} 个`);
+    }
 
     if (items >= 1) {
       await evaluate("document.querySelector('#clean-sessions .list-item').click()");

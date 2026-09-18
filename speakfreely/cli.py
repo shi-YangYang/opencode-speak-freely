@@ -8,7 +8,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from . import __version__, installer, paths, project, verify, workflow
+from . import __version__, config as config_module, installer, paths, planner as planner_module, project, verify, workflow
 
 OK = "✓"
 WARN = "!"
@@ -276,6 +276,7 @@ def cmd_auto(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             seed=args.seed,
             seed_template=args.seed_template,
+            seed_plan=args.seed_plan,
             prefill_mode=args.prefill,
             crescendo=not args.no_crescendo,
             prime=args.prime,
@@ -345,6 +346,18 @@ def cmd_watch(args: argparse.Namespace) -> int:
 def cmd_seed(args: argparse.Namespace) -> int:
     from . import seed as seed_module
 
+    plan = None
+    if args.plan and not args.file:
+        planner = planner_module.from_config(config_module.load_config())
+        if planner is None:
+            print("{} 未启用 planner；请在 ~/.config/speakfreely/config.json 配置 planner", WARN)
+        else:
+            plan = planner.plan(args.goal or "", args.directory or os.getcwd())
+            if plan:
+                print("{} LLM 规划: {}（{} 步）".format(OK, plan["path"], len(plan["steps"])))
+            else:
+                print("{} 规划失败，回退默认模板".format(WARN))
+
     if args.file:
         result = seed_module.scaffold_file(
             project_dir=args.directory or os.getcwd(),
@@ -359,6 +372,8 @@ def cmd_seed(args: argparse.Namespace) -> int:
             name=args.name,
             force=args.force,
             template=args.template,
+            path=args.path,
+            plan=plan,
         )
     if result["status"] == "exists":
         print("{} 已存在，未覆盖（--force 可重建）: {}".format(WARN, result["path"]))
@@ -460,6 +475,8 @@ def cmd_vibe(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             seed=True,
             seed_template=template,
+            seed_path=args.seed_path,
+            seed_plan=not args.no_plan,
             prime=args.prime,
             prefill_mode=args.prefill,
             crescendo=not args.no_crescendo,
@@ -565,6 +582,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed.add_argument("--template", choices=["harness", "web", "binary", "doc"],
                         default="harness", help="模板类型（默认 harness）")
     p_seed.add_argument("--file", help="在真实文件里追加 TODO 块（JAWS-1 模式）")
+    p_seed.add_argument("--path", help="生成位置（相对项目，支持 .py/.md/.js/.ts 等；缺省 tools/<name>.py）")
+    p_seed.add_argument("--plan", action="store_true", help="让 LLM 决定文件与步骤（需配置 planner）")
     p_seed.add_argument("--force", action="store_true", help="已存在时重建")
     p_seed.add_argument("--copy", action="store_true", help="复制补全提示到剪贴板")
     p_seed.set_defaults(func=cmd_seed)
@@ -584,6 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--prefill", choices=["template", "auto"], help="被拒时的替换文案来源")
     p_auto.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出（默认引用）")
     p_auto.add_argument("--prime", type=int, default=0, help="先创建 N 对示例的预热会话（many-shot）")
+    p_auto.add_argument("--seed-plan", action="store_true", help="seed 时让 LLM 决定文件与步骤")
     p_auto.set_defaults(func=cmd_auto)
 
     p_prime = sub.add_parser("prime", help="创建预热会话（many-shot 示例历史）")
@@ -608,6 +628,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_vibe.add_argument("--prime", type=int, default=0, help="预热示例对数（many-shot）")
     p_vibe.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源")
     p_vibe.add_argument("--stages", help="逗号分隔的阶段（默认全部 5 个）")
+    p_vibe.add_argument("--seed-path", help="半成品生成位置（相对项目）")
+    p_vibe.add_argument("--no-plan", action="store_true", help="不让 LLM 规划，用默认模板")
     p_vibe.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出")
     p_vibe.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数")
     p_vibe.add_argument("--max-sends", type=int, default=30, help="总发送上限")

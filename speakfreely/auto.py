@@ -11,7 +11,9 @@ from . import attempts as attempts_module
 from . import cleaner as cleaner_module
 from . import config as config_module
 from . import judge as judge_module
+from . import planner as planner_module
 from . import prefill as prefill_module
+from . import wrap as wrap_module
 from . import workflow
 from .core import OpenCodeDBAdapter, RefusalDetector
 from .runner import run_open
@@ -78,6 +80,9 @@ def run_auto(
     seed: bool = False,
     seed_name: Optional[str] = None,
     seed_template: str = "harness",
+    seed_path: Optional[str] = None,
+    seed_plan: bool = False,
+    planner_fn: Any = None,
     judge: Any = None,
     prefill_fn: Any = None,
     prefill_mode: Optional[str] = None,
@@ -123,11 +128,24 @@ def run_auto(
         else:
             from . import seed as seed_module
 
+            plan = None
+            if seed_plan and not seed_path:
+                planner_fn = planner_fn or planner_module.from_config(config)
+                if planner_fn is None:
+                    emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
+                if planner_fn is not None:
+                    plan = planner_fn.plan(goal or "", project_dir)
+                    if plan:
+                        emit("LLM 规划: {}（{} 步）".format(plan["path"], len(plan["steps"])))
+                    else:
+                        emit("规划失败，回退默认模板")
             seeded = seed_module.scaffold(
                 project_dir=project_dir,
                 goal=goal or "Task harness",
                 name=seed_name,
                 template=seed_template,
+                path=seed_path,
+                plan=plan,
             )
             seed_prompt = seeded["prompt"]
             emit("已生成半成品: {}".format(seeded["path"]))
@@ -351,6 +369,10 @@ def send_to_session(
     auto_clean: bool = True,
     seed: bool = False,
     seed_template: Optional[str] = None,
+    seed_path: Optional[str] = None,
+    seed_plan: bool = False,
+    planner_fn: Any = None,
+    wrap: Optional[str] = None,
 ) -> Dict[str, Any]:
     """向已有会话发一条消息；被拒时自动清理并重试（auto_clean=False 时只报告）。
 
@@ -383,14 +405,30 @@ def send_to_session(
     if seed:
         from . import seed as seed_module
 
+        plan = None
+        if seed_plan and not seed_path:
+            planner_fn = planner_fn or planner_module.from_config(config_module.load_config())
+            if planner_fn is None:
+                emit("未配置 planner，已回退默认模板（可在 ~/.config/speakfreely/config.json 配置）")
+            if planner_fn is not None:
+                plan = planner_fn.plan(prompt, project_dir)
+                if plan:
+                    emit("LLM 规划: {}（{} 步）".format(plan["path"], len(plan["steps"])))
+                else:
+                    emit("规划失败，回退默认模板")
         seeded = seed_module.scaffold(
             project_dir=project_dir,
             goal=prompt,
             template=seed_template or seed_module.pick_template(prompt),
+            path=seed_path,
+            plan=plan,
         )
         emit("已生成半成品: {}".format(seeded["path"]))
         emit("实际发送: {}".format(seeded["prompt"]))
         current = seeded["prompt"]
+    elif wrap:
+        current = wrap_module.apply(prompt, wrap)
+        emit("已应用 TODO 包装（{}），实际发送: {}".format(wrap, _summarize(current, 160)))
 
     while True:
         result = runner(

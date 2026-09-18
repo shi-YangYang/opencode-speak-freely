@@ -81,6 +81,30 @@ class OpenCodeDBAdapter:
         finally:
             conn.close()
 
+    def list_project_directories(self) -> List[Dict[str, Any]]:
+        """列出 project 表登记过的目录（含还没有会话的项目）。"""
+        conn = self._connect(readonly=True)
+        try:
+            rows = conn.execute(
+                "SELECT id, worktree, time_updated FROM project "
+                "WHERE worktree IS NOT NULL AND worktree != ''"
+            )
+            projects = []
+            for row in rows:
+                updated = row["time_updated"] or 0
+                if updated > 1e12:
+                    updated = updated / 1000.0
+                projects.append(
+                    {
+                        "id": row["id"],
+                        "directory": row["worktree"],
+                        "mtime": updated,
+                    }
+                )
+            return projects
+        finally:
+            conn.close()
+
     def load_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         conn = self._connect(readonly=True)
         try:

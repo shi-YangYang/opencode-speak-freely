@@ -153,6 +153,29 @@ class TestApi(WebCase):
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0]["id"], "ses_test")
 
+    def test_project_without_sessions_is_listed(self):
+        # 模拟 OpenCode 里创建但没建会话的项目：project 表有登记、目录存在
+        empty_dir = os.path.join(self.temp_home, "empty-project")
+        os.makedirs(empty_dir, exist_ok=True)
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO project VALUES (?,?,?,?,?)",
+                ("proj_empty", empty_dir, "empty", 3, 3),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _, projects = self.get("/api/projects")
+        directories = {os.path.realpath(p["directory"]): p for p in projects}
+        self.assertIn(os.path.realpath(empty_dir), directories)
+        self.assertEqual(directories[os.path.realpath(empty_dir)]["sessions"], 0)
+
+        # 已有会话的项目不会因为 project 行重复出现
+        real = [os.path.realpath(p["directory"]) for p in projects]
+        self.assertEqual(len(real), len(set(real)))
+
     def test_session_preview_flags_refusal(self):
         _, data = self.get("/api/session?id=ses_test")
         self.assertGreaterEqual(data["refusals"], 1)
@@ -322,6 +345,79 @@ class TestApi(WebCase):
 
         _, data = self.get("/api/session?id=ses_test")
         self.assertEqual(data["refusals"], 1)  # 原文回来了
+
+    def test_settings_defaults_and_save(self):
+        _, data = self.get("/api/settings")
+        self.assertFalse(data["llm"]["api_key_configured"])
+        self.assertFalse(data["planner_enabled"])
+
+        _, saved = self.post("/api/settings", {
+            "llm": {"endpoint": "http://127.0.0.1:9/v1", "model": "mock", "api_key": "sk-abc", "timeout": 12},
+            "planner_enabled": True,
+            "judge_enabled": True,
+            "prefill_mode": "auto",
+        })
+        self.assertTrue(saved["llm"]["api_key_configured"])
+        self.assertTrue(saved["planner_enabled"])
+        self.assertEqual(saved["prefill_mode"], "auto")
+
+        # 空密钥 = 保留原密钥
+        _, again = self.post("/api/settings", {
+            "llm": {"endpoint": "http://127.0.0.1:9/v1", "model": "mock2", "api_key": ""},
+            "planner_enabled": False,
+            "judge_enabled": False,
+            "prefill_mode": "template",
+        })
+        self.assertTrue(again["llm"]["api_key_configured"])
+        self.assertEqual(again["llm"]["model"], "mock2")
+
+        config_path = os.path.join(self.temp_home, ".config", "speakfreely", "config.json")
+        raw = json.loads(open(config_path, encoding="utf-8").read())
+        self.assertEqual(raw["llm"]["api_key"], "sk-abc")
+
+    def test_settings_detects_opencode_config(self):
+        # 临时 HOME 下写一份 OpenCode 配置，应被自动检测
+        opencode_dir = os.path.join(self.temp_home, ".config", "opencode")
+        os.makedirs(opencode_dir, exist_ok=True)
+        with open(os.path.join(opencode_dir, "opencode.jsonc"), "w", encoding="utf-8") as stream:
+            stream.write("""
+            {
+              // 默认模型
+              "model": "tokenrhythm/glm-5.2",
+              "provider": {
+                "tokenrhythm": {
+                  "options": { "baseURL": "https://example.test/v1", "apiKey": "sk-test" },
+                  "models": { "glm-5.2": {} },
+                },
+              },
+            }
+            """)
+
+        from speakfreely import opencode_llm
+
+        detected = opencode_llm.detect()
+        self.assertEqual(detected["model"], "glm-5.2")
+        self.assertEqual(detected["endpoint"], "https://example.test/v1")
+
+        _, data = self.get("/api/settings")
+        self.assertTrue(data["llm"]["detected"])
+        self.assertEqual(data["llm"]["model"], "glm-5.2")
+        self.assertTrue(data["llm"]["api_key_configured"])
+
+    def test_load_config_does_not_mutate_defaults(self):
+        from speakfreely import config as config_module
+
+        first = config_module.load_config()
+        first.setdefault("llm", {})["endpoint"] = "http://leak.test/v1"
+        second = config_module.load_config()
+        self.assertNotEqual(second["llm"]["endpoint"], "http://leak.test/v1")
+
+    def test_settings_test_connection_failure(self):
+        _, result = self.post("/api/settings/test", {
+            "endpoint": "http://127.0.0.1:9/v1", "model": "mock",
+        })
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["error"])
 
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
