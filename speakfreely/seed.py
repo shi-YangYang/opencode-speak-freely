@@ -259,6 +259,72 @@ def pick_template(goal: str) -> str:
     return "harness"
 
 
+COMMENT_SYNTAX = {
+    ".py": ("#", "#"),
+    ".js": ("//", "//"),
+    ".ts": ("//", "//"),
+    ".tsx": ("//", "//"),
+    ".jsx": ("//", "//"),
+    ".vue": ("//", "//"),
+    ".go": ("//", "//"),
+    ".rs": ("//", "//"),
+    ".sh": ("#", "#"),
+    ".yml": ("#", "#"),
+    ".yaml": ("#", "#"),
+    ".toml": ("#", "#"),
+    ".md": ("<!--", "-->"),
+    ".html": ("<!--", "-->"),
+    ".vue": ("//", "//"),
+}
+
+
+MARKDOWN_SKELETON = """# {goal}
+
+<!-- {marker} -->
+
+Work in progress. Steps:
+  1. 背景与目标                                  [DONE]
+  2. 现状与证据                                  [TODO]
+  3. 方案与取舍                                  [TODO]
+  4. 实施步骤                                    [TODO]
+  5. 验证方式                                    [TODO]
+
+Keep existing sections unchanged.
+"""
+
+
+def _stub_block(goal: str, extension: str, function_name: str) -> str:
+    """按文件类型生成 TODO 块（python 带函数桩，其他类型用注释 TODO）。"""
+    opener, closer = COMMENT_SYNTAX.get(extension, ("#", "#"))
+    if extension == ".py":
+        return (
+            "\n\n# ---------------------------------------------------------------------------\n"
+            "# {marker}: {goal}\n"
+            "# Implement the function below; keep existing code unchanged.\n"
+            "def {func}(*args, **kwargs):\n"
+            "    raise NotImplementedError\n"
+        ).format(marker=MARKER, goal=goal, func=function_name)
+    if extension == ".md":
+        return "\n\n" + MARKDOWN_SKELETON.format(goal=goal, marker=MARKER)
+    if opener == "<!--":
+        return "\n\n{open} {marker}: {goal}\n     Implement the steps above; keep existing content unchanged. \n{close}\n".format(
+            open=opener, close=closer, marker=MARKER, goal=goal
+        )
+    return (
+        "\n\n{syntax} ---------------------------------------------------------------------------\n"
+        "{syntax} {marker}: {goal}\n"
+        "{syntax} Implement the steps above; keep existing code unchanged.\n"
+    ).format(syntax=opener, marker=MARKER, goal=goal)
+
+
+def resolve_target(project_dir: str, path: str) -> str:
+    """把用户给的路径解析为项目内的目标文件（目录则用默认文件名）。"""
+    target = path if os.path.isabs(path) else os.path.join(project_dir, path)
+    if os.path.isdir(target) or not os.path.splitext(target)[1]:
+        return os.path.join(target, "task_harness.py")
+    return target
+
+
 def _slugify(value: str, fallback: str = "task_harness") -> str:
     slug = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
     return slug[:40] or fallback
@@ -277,30 +343,52 @@ def scaffold(
     name: Optional[str] = None,
     force: bool = False,
     template: str = "harness",
+    path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """在 <项目>/tools/<name>.py 生成半成品文件。"""
+    """生成半成品文件。
+
+    path 为空时默认 tools/<name>.py；指定路径时按扩展名决定写法：
+    .py 走模板，.md 写 TODO 注释，其他类型写对应注释风格的 TODO 块。
+    """
     project_dir = os.path.realpath(os.path.expanduser(project_dir))
     if template not in TEMPLATES:
         raise ValueError("未知模板: {}（可选 {}）".format(template, "/".join(TEMPLATES)))
-    module = _slugify(name or DEFAULT_NAMES.get(template, template))
-    relative = os.path.join("tools", "{}.py".format(module))
-    path = os.path.join(project_dir, relative)
 
-    if os.path.exists(path) and not force:
+    if path:
+        target = resolve_target(project_dir, path)
+    else:
+        module = _slugify(name or DEFAULT_NAMES.get(template, template))
+        target = os.path.join(project_dir, "tools", "{}.py".format(module))
+
+    relative = os.path.relpath(target, project_dir)
+    extension = os.path.splitext(target)[1].lower()
+
+    if os.path.exists(target) and not force:
+        if MARKER not in open(target, "r", encoding="utf-8", errors="replace").read():
+            raise ValueError("目标文件没有本工具标记，已保留: {}".format(target))
         return {
             "status": "exists",
-            "path": path,
+            "path": target,
             "relative": relative,
             "prompt": completion_prompt(relative),
         }
 
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    content = TEMPLATES[template].replace("{goal}", goal or "Task harness")
-    atomic_write_text(path, content)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if extension in ("", ".py"):
+        content = TEMPLATES[template].replace("{goal}", goal or "Task harness")
+        head, sep, tail = content.partition("\n")
+        content = "{}\n# {}\n{}".format(head, MARKER, tail) if sep else content
+        atomic_write_text(target, content)
+    else:
+        base = ""
+        if os.path.exists(target):
+            base = open(target, "r", encoding="utf-8").read().rstrip("\n")
+        function_name = _slugify(name or os.path.splitext(os.path.basename(target))[0] + "_run")
+        atomic_write_text(target, base + _stub_block(goal or "Task harness", extension, function_name), mode=None)
 
     return {
         "status": "created",
-        "path": path,
+        "path": target,
         "relative": relative,
         "prompt": completion_prompt(relative),
     }
@@ -328,25 +416,15 @@ def scaffold_file(
             "prompt": completion_prompt(relative),
         }
 
-    if target.endswith(".md"):
-        block = "\n\n<!-- {marker}: {goal} -->\n".format(marker=MARKER, goal=goal)
-        new_content = content.rstrip("\n") + block
+    extension = os.path.splitext(target)[1].lower()
+    func = _slugify(name or os.path.splitext(os.path.basename(target))[0] + "_run")
+    block = _stub_block(goal, extension, func)
+    anchor = "\nif __name__ =="
+    if extension == ".py" and anchor in content:
+        index = content.index(anchor)
+        new_content = content[:index].rstrip("\n") + block + "\n" + content[index:].lstrip("\n")
     else:
-        func = _slugify(name or os.path.splitext(os.path.basename(target))[0] + "_run")
-        block = (
-            "\n\n# ---------------------------------------------------------------------------\n"
-            "# {marker}: {goal}\n"
-            "# Implement the function below; keep existing code unchanged.\n"
-            "def {func}(*args, **kwargs):\n"
-            "    raise NotImplementedError\n"
-        ).format(marker=MARKER, goal=goal, func=func)
-
-        anchor = "\nif __name__ =="
-        if anchor in content:
-            index = content.index(anchor)
-            new_content = content[:index].rstrip("\n") + block + "\n" + content[index:].lstrip("\n")
-        else:
-            new_content = content.rstrip("\n") + block
+        new_content = content.rstrip("\n") + block
 
     atomic_write_text(target, new_content, mode=None)
     relative = os.path.relpath(target, project_dir)

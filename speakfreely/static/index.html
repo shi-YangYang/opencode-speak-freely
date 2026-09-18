@@ -193,6 +193,8 @@
     <label>阶段（新会话模式，鼠标悬浮看说明）</label>
     <div class="checks" id="stages"></div>
 
+    <label>生成位置（可选，代码上下文模式）</label>
+    <input id="seed-path" placeholder="如 webui/task_page.py、docs/plan.md；留空=tools/task_harness.py" />
     <div class="row">
       <label style="margin:0">预热示例 <input id="prime" type="number" value="0" min="0" max="4" /></label>
       <div style="margin:0">
@@ -594,6 +596,7 @@ async function run(dryRun) {
     prefill: prefillDD.getValue() || null,
     auto_clean: $("auto-clean").checked,
     seed: $("use-seed").checked,
+    seed_path: $("seed-path").value.trim(),
     dry_run: !!dryRun,
   };
   log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);

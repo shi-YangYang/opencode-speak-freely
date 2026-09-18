@@ -347,16 +347,41 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertEqual(result["relative"], os.path.join("tools", "task_harness.py"))
         self.assertIn("task_harness.py", result["prompt"])
 
-    def test_scaffold_does_not_overwrite(self):
+    def test_scaffold_refuses_unmanaged_file(self):
         from speakfreely import seed
 
         first = seed.scaffold(self.temp, goal="A")
         with open(first["path"], "w", encoding="utf-8") as stream:
             stream.write("USER OWNED\n")
 
+        with self.assertRaises(ValueError):
+            seed.scaffold(self.temp, goal="B")
+        self.assertEqual(open(first["path"], encoding="utf-8").read(), "USER OWNED\n")
+
+    def test_scaffold_second_run_is_idempotent(self):
+        from speakfreely import seed
+
+        first = seed.scaffold(self.temp, goal="A")
+        content = open(first["path"], encoding="utf-8").read()
         second = seed.scaffold(self.temp, goal="B")
         self.assertEqual(second["status"], "exists")
-        self.assertEqual(open(second["path"], encoding="utf-8").read(), "USER OWNED\n")
+        self.assertEqual(open(second["path"], encoding="utf-8").read(), content)
+
+    def test_scaffold_custom_path_by_extension(self):
+        from speakfreely import seed
+
+        py = seed.scaffold(self.temp, goal="补充实现", path="src/feature.py")
+        self.assertTrue(py["path"].endswith(os.path.join("src", "feature.py")))
+        self.assertIn("NotImplementedError", open(py["path"], encoding="utf-8").read())
+
+        md = seed.scaffold(self.temp, goal="整理方案", template="doc", path="docs/plan.md")
+        content = open(md["path"], encoding="utf-8").read()
+        self.assertIn(seed.MARKER, content)
+        self.assertIn("整理方案", content)
+
+        js = seed.scaffold(self.temp, goal="对接接口", path="webui/flow.js")
+        content = open(js["path"], encoding="utf-8").read()
+        self.assertIn("// " + seed.MARKER, content)
 
     def test_auto_seed_uses_completion_prompt(self):
         prompts = []
@@ -415,7 +440,10 @@ class TestSeed(HomeIsolation, unittest.TestCase):
 
         seed.scaffold_file(self.temp, real_file, goal="补充文档")
         content = open(real_file, encoding="utf-8").read()
-        self.assertIn("<!-- {}: 补充文档 -->".format(seed.MARKER), content)
+        self.assertIn("# 标题", content)                 # 原有内容保留
+        self.assertIn("# 补充文档", content)             # 目标作为标题
+        self.assertIn("<!-- {} -->".format(seed.MARKER), content)
+        self.assertIn("[TODO]", content)
 
     def test_pick_template(self):
         from speakfreely import seed

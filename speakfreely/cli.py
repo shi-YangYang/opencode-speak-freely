@@ -359,6 +359,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
             name=args.name,
             force=args.force,
             template=args.template,
+            path=args.path,
         )
     if result["status"] == "exists":
         print("{} 已存在，未覆盖（--force 可重建）: {}".format(WARN, result["path"]))
@@ -460,6 +461,7 @@ def cmd_vibe(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             seed=True,
             seed_template=template,
+            seed_path=args.seed_path,
             prime=args.prime,
             prefill_mode=args.prefill,
             crescendo=not args.no_crescendo,
@@ -565,6 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed.add_argument("--template", choices=["harness", "web", "binary", "doc"],
                         default="harness", help="模板类型（默认 harness）")
     p_seed.add_argument("--file", help="在真实文件里追加 TODO 块（JAWS-1 模式）")
+    p_seed.add_argument("--path", help="生成位置（相对项目，支持 .py/.md/.js/.ts 等；缺省 tools/<name>.py）")
     p_seed.add_argument("--force", action="store_true", help="已存在时重建")
     p_seed.add_argument("--copy", action="store_true", help="复制补全提示到剪贴板")
     p_seed.set_defaults(func=cmd_seed)
@@ -608,6 +611,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_vibe.add_argument("--prime", type=int, default=0, help="预热示例对数（many-shot）")
     p_vibe.add_argument("--prefill", choices=["template", "auto"], help="替换文案来源")
     p_vibe.add_argument("--stages", help="逗号分隔的阶段（默认全部 5 个）")
+    p_vibe.add_argument("--seed-path", help="半成品生成位置（相对项目）")
     p_vibe.add_argument("--no-crescendo", action="store_true", help="不引用上一轮产出")
     p_vibe.add_argument("--max-attempts", type=int, default=3, help="每阶段最多尝试次数")
     p_vibe.add_argument("--max-sends", type=int, default=30, help="总发送上限")

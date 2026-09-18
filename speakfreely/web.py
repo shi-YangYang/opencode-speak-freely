@@ -449,6 +449,7 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     dry_run=bool(params.get("dry_run")),
                     seed=True,
                     seed_template=seed_module.pick_template(goal),
+                    seed_path=(params.get("seed_path") or "").strip() or None,
                     prime=int(params.get("prime") or 0),
                     prefill_mode=params.get("prefill") or None,
                     crescendo=not bool(params.get("no_crescendo")),
@@ -468,6 +469,7 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     auto_clean=params.get("auto_clean", True) is not False,
                     seed=bool(params.get("seed")),
                     seed_template=(params.get("seed_template") or "").strip() or None,
+                    seed_path=(params.get("seed_path") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":

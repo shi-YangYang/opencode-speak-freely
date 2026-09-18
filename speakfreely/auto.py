@@ -78,6 +78,7 @@ def run_auto(
     seed: bool = False,
     seed_name: Optional[str] = None,
     seed_template: str = "harness",
+    seed_path: Optional[str] = None,
     judge: Any = None,
     prefill_fn: Any = None,
     prefill_mode: Optional[str] = None,
@@ -128,6 +129,7 @@ def run_auto(
                 goal=goal or "Task harness",
                 name=seed_name,
                 template=seed_template,
+                path=seed_path,
             )
             seed_prompt = seeded["prompt"]
             emit("已生成半成品: {}".format(seeded["path"]))
@@ -351,6 +353,7 @@ def send_to_session(
     auto_clean: bool = True,
     seed: bool = False,
     seed_template: Optional[str] = None,
+    seed_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """向已有会话发一条消息；被拒时自动清理并重试（auto_clean=False 时只报告）。
 
@@ -387,6 +390,7 @@ def send_to_session(
             project_dir=project_dir,
             goal=prompt,
             template=seed_template or seed_module.pick_template(prompt),
+            path=seed_path,
         )
         emit("已生成半成品: {}".format(seeded["path"]))
         emit("实际发送: {}".format(seeded["prompt"]))
