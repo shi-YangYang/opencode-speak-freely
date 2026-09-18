@@ -34,6 +34,16 @@ def _resolve_replacement(
     return config.get("replacement") or DEFAULT_REPLACEMENT
 
 
+def _change_dict(change: Any) -> Dict[str, Any]:
+    return {
+        "line_num": change.line_num,
+        "change_type": change.change_type,
+        "original_content": change.original_content,
+        "new_content": change.new_content,
+        "line_nums": change.line_nums,
+    }
+
+
 def _change_line(change: Any) -> str:
     kind = {
         "replace": "替换拒绝回复",
@@ -115,6 +125,7 @@ def clean_opencode(
     judge: Any = None,
     prefill_mode: Optional[str] = None,
     prefill_fn: Any = None,
+    selected_lines: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """清理 OpenCode 会话中被拒的助手消息。
 
@@ -180,8 +191,9 @@ def clean_opencode(
             replacement=session_replacement,
             clean_reasoning=clean_reasoning,
             show_content=show_content,
+            selected_lines=selected_lines,
         )
-        if judge is not None:
+        if judge is not None and not selected_lines:
             judged, judged_changes = _judge_pass(
                 cleaned, detector, judge, session_replacement, show_content=show_content
             )
@@ -191,7 +203,7 @@ def clean_opencode(
         entry["modified"] = modified
         entry["changes"] = [_change_line(change) for change in changes]
         if show_content:
-            entry["details"] = changes
+            entry["details"] = [_change_dict(change) for change in changes]
 
         if modified and not dry_run:
             entry["backup"] = adapter.backup_database()

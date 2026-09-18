@@ -258,6 +258,71 @@ class TestApi(WebCase):
             self.get("/api/message?id=ses_test&index=999")
         self.assertEqual(ctx.exception.code, 500)
 
+    def _add_refusal(self, message_id, part_id, text, timestamp=2):
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO message VALUES (?,?,?,?,?)",
+                (message_id, "ses_test", timestamp, timestamp, json.dumps({"role": "assistant"})),
+            )
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                (part_id, message_id, "ses_test", timestamp, timestamp,
+                 json.dumps({"type": "text", "text": text})),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_refusals_session_endpoint(self):
+        _, data = self.get("/api/refusals?session=ses_test")
+        self.assertEqual(len(data["refusals"]), 1)
+        self.assertEqual(data["refusals"][0]["index"], 0)
+
+    def test_refusals_project_scan(self):
+        _, data = self.get("/api/refusals?project=" + urllib.request.quote(self.project))
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], "ses_test")
+        self.assertEqual(data[0]["count"], 1)
+
+    def test_selective_clean_only_chosen(self):
+        self._add_refusal("msg_2", "prt_2", "抱歉，我不能帮你做这个。", timestamp=2)
+
+        _, data = self.get("/api/refusals?session=ses_test")
+        lines = [item["line"] for item in data["refusals"]]
+        self.assertEqual(len(lines), 2)
+
+        _, result = self.post(
+            "/api/clean",
+            {"session": "ses_test", "selected": [lines[1]]},
+        )
+        entry = result["sessions"][0]
+        self.assertTrue(entry["modified"])
+        self.assertEqual(len(entry["details"]), 1)
+
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            rows = {row[0]: json.loads(row[1])["text"] for row in
+                    conn.execute("SELECT id, data FROM part WHERE id IN ('prt_text','prt_2')")}
+        finally:
+            conn.close()
+        self.assertIn("抱歉，我不能帮你做这个。", rows["prt_2"])       # 未选中的保持原样
+        self.assertNotIn("抱歉，我不能帮你实现这个协议。", rows["prt_text"])  # 选中的被替换
+
+    def test_backups_and_restore(self):
+        _, backups = self.get("/api/backups")
+        self.assertEqual(backups, [])
+
+        self.post("/api/clean", {"session": "ses_test"})
+        _, backups = self.get("/api/backups")
+        self.assertEqual(len(backups), 1)
+
+        _, restored = self.post("/api/restore", {"backup": backups[0]["path"]})
+        self.assertTrue(restored["ok"])
+
+        _, data = self.get("/api/session?id=ses_test")
+        self.assertEqual(data["refusals"], 1)  # 原文回来了
+
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
         self.assertEqual(
@@ -271,6 +336,48 @@ class TestApi(WebCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.get("/api/nope")
         self.assertEqual(ctx.exception.code, 404)
+
+
+class TestFrontend(unittest.TestCase):
+    """内联 JS 语法与关键结构检查（有 node 时才跑语法检查）。"""
+
+    HTML = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "speakfreely", "static", "index.html",
+    )
+
+    def test_required_ids_present(self):
+        html = open(self.HTML, encoding="utf-8").read()
+        for token in ("view-run", "view-clean", "btn-scan", "clean-list",
+                      "clean-backups", "clean-log", "btn-clean-preview"):
+            self.assertIn(token, html, token)
+
+    def test_hidden_main_actually_hides(self):
+        # 曾经的 bug：main{display:grid} 覆盖 [hidden]，切页签画面不变
+        html = open(self.HTML, encoding="utf-8").read()
+        self.assertIn("main[hidden]", html)
+
+    def test_inline_js_syntax(self):
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 不可用，跳过 JS 语法检查")
+
+        html = open(self.HTML, encoding="utf-8").read()
+        scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+        self.assertTrue(scripts)
+        handle, path = tempfile.mkstemp(suffix=".js")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(scripts[-1])
+            proc = subprocess.run([node, "--check", path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        finally:
+            os.remove(path)
 
 
 if __name__ == "__main__":

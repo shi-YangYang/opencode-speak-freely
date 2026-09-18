@@ -279,6 +279,50 @@ def session_preview(session_id: str, db_path: Optional[str] = None, limit: int =
     }
 
 
+def session_refusals(session_id: str, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """列出某会话里所有被判定为拒绝的助手消息。"""
+    adapter = _adapter(db_path)
+    messages = adapter.load_session_messages(session_id)
+    strategy = OpenCodeFormat()
+    detector = RefusalDetector()
+
+    refusals = []
+    for index, message in enumerate(messages):
+        if message.get("type") != "assistant":
+            continue
+        text = _message_text(message, strategy)
+        if text and detector.detect(text):
+            refusals.append(
+                {
+                    "index": index,
+                    "line": index + 1,
+                    "excerpt": text[:300],
+                    "length": len(text),
+                }
+            )
+    return {"session": session_id, "refusals": refusals, "total": len(messages)}
+
+
+def scan_project_refusals(project: str, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """扫描某项目下所有会话，返回含拒绝的会话及条数。"""
+    results = []
+    for session in list_sessions(project, db_path):
+        try:
+            data = session_refusals(session["id"], db_path)
+        except Exception:  # noqa: BLE001 - 单个会话失败不影响扫描
+            continue
+        if data["refusals"]:
+            results.append(
+                {
+                    "id": session["id"],
+                    "title": session["title"],
+                    "updated": session["updated"],
+                    "count": len(data["refusals"]),
+                }
+            )
+    return results
+
+
 def session_message(session_id, index, db_path=None):
     """按绝对索引取单条消息的完整文本（供前端模态框）。"""
     adapter = _adapter(db_path)
@@ -391,6 +435,9 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     model=model,
                     max_attempts=int(params.get("max_attempts") or 3),
                     timeout=int(params.get("timeout") or 900),
+                    auto_clean=params.get("auto_clean", True) is not False,
+                    seed=bool(params.get("seed")),
+                    seed_template=(params.get("seed_template") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":
@@ -405,7 +452,14 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
             else:
                 raise ValueError("未知模式: {}".format(mode))
 
-            JOBS.log(job_id, "完成")
+            if isinstance(result, dict) and result.get("session_id"):
+                JOBS.log(job_id, "会话: {}".format(result["session_id"]))
+            if isinstance(result, dict) and result.get("backup"):
+                JOBS.log(job_id, "备份: {}".format(result["backup"]))
+            if isinstance(result, dict) and result.get("ok") is False:
+                JOBS.log(job_id, "未完成: {}".format(result.get("reason") or "达到上限"))
+            else:
+                JOBS.log(job_id, "完成")
             JOBS.finish(job_id, "done", result)
         except Exception as exc:  # noqa: BLE001 - 任务失败只影响该任务
             JOBS.log(job_id, "失败: {}".format(exc))
@@ -415,11 +469,29 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
     return job_id
 
 
-def start_clean(session_id: str, project: Optional[str] = None, dry_run: bool = False, db_path: Optional[str] = None) -> Dict[str, Any]:
+def start_clean(
+    session_id: str,
+    project: Optional[str] = None,
+    dry_run: bool = False,
+    db_path: Optional[str] = None,
+    selected: Optional[List[int]] = None,
+    replacement: Optional[str] = None,
+    stage: Optional[str] = None,
+    prefill: Optional[str] = None,
+) -> Dict[str, Any]:
+    kwargs = {
+        "dry_run": dry_run,
+        "db_path": db_path,
+        "show_content": True,
+        "selected_lines": [int(item) for item in selected] if selected else None,
+        "replacement": replacement,
+        "stage": stage,
+        "prefill_mode": prefill,
+    }
     if session_id:
-        return cleaner_module.clean_opencode(session=session_id, dry_run=dry_run, db_path=db_path)
+        return cleaner_module.clean_opencode(session=session_id, **kwargs)
     if project:
-        return cleaner_module.clean_opencode(all_sessions=True, dry_run=dry_run, db_path=db_path)
+        return cleaner_module.clean_opencode(all_sessions=True, **kwargs)
     raise ValueError("需要会话或项目")
 
 
@@ -534,6 +606,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not session_id:
                     return self._error("缺少 id 参数")
                 return self._json(session_preview(session_id, self.db_path))
+            if parsed.path == "/api/refusals":
+                session_id = (query.get("session") or [""])[0]
+                project = (query.get("project") or [""])[0]
+                if session_id:
+                    return self._json(session_refusals(session_id, self.db_path))
+                if project:
+                    return self._json(scan_project_refusals(project, self.db_path))
+                return self._error("需要 session 或 project 参数")
+            if parsed.path == "/api/backups":
+                from . import cleaner as cleaner_module
+
+                return self._json(cleaner_module.list_backups(db_path=self.db_path))
             if parsed.path == "/api/message":
                 session_id = (query.get("id") or [""])[0]
                 index_raw = (query.get("index") or [""])[0]
@@ -568,8 +652,20 @@ class Handler(BaseHTTPRequestHandler):
                     project=(body.get("project") or "").strip() or None,
                     dry_run=bool(body.get("dry_run")),
                     db_path=self.db_path,
+                    selected=body.get("selected") or None,
+                    replacement=(body.get("replacement") or "").strip() or None,
+                    stage=(body.get("stage") or "").strip() or None,
+                    prefill=(body.get("prefill") or "").strip() or None,
                 )
                 return self._json(result)
+            if parsed.path == "/api/restore":
+                from . import cleaner as cleaner_module
+
+                backup = (body.get("backup") or "").strip()
+                if not backup:
+                    return self._error("缺少 backup 路径")
+                cleaner_module.restore_backup(backup, db_path=self.db_path)
+                return self._json({"ok": True, "restored": backup})
             if parsed.path == "/api/watch":
                 project = (body.get("project") or "").strip()
                 if not project:
