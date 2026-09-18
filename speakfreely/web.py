@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import auto as auto_module
 from . import cleaner as cleaner_module
 from . import config as config_module
+from . import desktop_state
 from . import installer
 from . import paths
 from . import seed as seed_module
@@ -110,6 +111,21 @@ def list_projects(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         stamp = session.get("mtime_str", "")
         if stamp > last_seen.get(key, ""):
             last_seen[key] = stamp
+
+    desktop_dirs = []
+    try:
+        desktop_dirs = desktop_state.project_dirs()
+    except Exception:  # noqa: BLE001 - 状态文件损坏不影响列表
+        desktop_dirs = []
+
+    for directory in desktop_dirs:
+        if not directory or not os.path.isdir(directory):
+            continue
+        key = os.path.realpath(directory)
+        if key in grouped:
+            continue
+        grouped[key] = {"directory": directory, "sessions": 0, "last": "", "exists": True}
+        last_seen[key] = ""
 
     for project in adapter.list_project_directories():
         directory = project.get("directory") or ""

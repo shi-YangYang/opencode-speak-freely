@@ -176,6 +176,22 @@ class TestApi(WebCase):
         real = [os.path.realpath(p["directory"]) for p in projects]
         self.assertEqual(len(real), len(set(real)))
 
+    def test_desktop_projects_are_listed(self):
+        # Desktop 状态文件里的项目（尚无会话/无 project 行）也应出现在列表
+        desktop_dir = os.path.join(self.temp_home, "desktop-project")
+        os.makedirs(desktop_dir, exist_ok=True)
+        state_dir = os.path.join(self.temp_home, "Library", "Application Support", "ai.opencode.desktop")
+        os.makedirs(state_dir, exist_ok=True)
+        with open(os.path.join(state_dir, "opencode.global.dat"), "w", encoding="utf-8") as stream:
+            json.dump(
+                {"server": json.dumps({"projects": {"local": [{"worktree": desktop_dir}]}})},
+                stream,
+            )
+
+        _, projects = self.get("/api/projects")
+        directories = [os.path.realpath(item["directory"]) for item in projects]
+        self.assertIn(os.path.realpath(desktop_dir), directories)
+
     def test_session_preview_flags_refusal(self):
         _, data = self.get("/api/session?id=ses_test")
         self.assertGreaterEqual(data["refusals"], 1)
