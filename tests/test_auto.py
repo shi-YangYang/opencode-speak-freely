@@ -792,6 +792,34 @@ class TestSendToSession(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("未清理", result["reason"])
 
+    def test_send_with_seed_sends_completion_prompt(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "已实现。", "cost": 0.0}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="把注册流程整理成可运行脚本",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{}]},
+            db_path=self.db_path,
+            judge=False,
+            seed=True,
+        )
+        self.assertTrue(result["ok"])
+        self.assertIn("是半成品", prompts[0])          # 发的是补全提示而非原始请求
+        self.assertIn("TODO", prompts[0])
+        self.assertNotIn("把注册流程整理成可运行脚本", prompts[0])
+
+        tools_dir = os.path.join(self.project, "tools")
+        files = os.listdir(tools_dir)
+        self.assertTrue(files)                          # 半成品文件已生成
+        content = open(os.path.join(tools_dir, files[0]), encoding="utf-8").read()
+        self.assertIn("把注册流程整理成可运行脚本", content)  # 目标写进了文件
+
     def test_gives_up(self):
         def fake_runner(prompt, **kwargs):
             return {"session_id": "ses_test", "text": REFUSAL, "cost": 0.0}

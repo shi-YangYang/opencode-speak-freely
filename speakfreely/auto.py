@@ -349,8 +349,13 @@ def send_to_session(
     retry_prompt: str = DEFAULT_RETRY_PROMPT,
     on_event: Optional[Callable[[str], None]] = None,
     auto_clean: bool = True,
+    seed: bool = False,
+    seed_template: Optional[str] = None,
 ) -> Dict[str, Any]:
     """向已有会话发一条消息；被拒时自动清理并重试（auto_clean=False 时只报告）。
+
+    seed=True 时把目标写进半成品文件，实际发送"补全 TODO"而不是原始请求。
+    
 
     Returns:
         {ok, text, attempts, sends, cost, session_id, backup, reason}
@@ -374,6 +379,18 @@ def send_to_session(
     attempts = 0
     current = prompt
     backup = None
+
+    if seed:
+        from . import seed as seed_module
+
+        seeded = seed_module.scaffold(
+            project_dir=project_dir,
+            goal=prompt,
+            template=seed_template or seed_module.pick_template(prompt),
+        )
+        emit("已生成半成品: {}".format(seeded["path"]))
+        emit("实际发送: {}".format(seeded["prompt"]))
+        current = seeded["prompt"]
 
     while True:
         result = runner(

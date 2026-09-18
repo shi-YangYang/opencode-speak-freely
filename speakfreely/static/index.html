@@ -206,6 +206,7 @@
     <div class="checks" style="margin-top:10px">
       <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
       <label style="cursor:pointer" data-tip="已有会话模式：被拒时自动把拒绝替换成继续文案并重试"><input type="checkbox" id="auto-clean" checked> 被拒自动清理</label>
+      <label style="cursor:pointer" data-tip="已有会话模式：把目标写进半成品文件，实际发送「补全 TODO」而不是原始请求（同新建会话的 seed 机制）"><input type="checkbox" id="use-seed" checked> 代码上下文模式</label>
     </div>
 
     <div class="row">
@@ -592,6 +593,7 @@ async function run(dryRun) {
     prime: parseInt($("prime").value || "0", 10),
     prefill: prefillDD.getValue() || null,
     auto_clean: $("auto-clean").checked,
+    seed: $("use-seed").checked,
     dry_run: !!dryRun,
   };
   log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);

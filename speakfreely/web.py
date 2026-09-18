@@ -436,6 +436,8 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     max_attempts=int(params.get("max_attempts") or 3),
                     timeout=int(params.get("timeout") or 900),
                     auto_clean=params.get("auto_clean", True) is not False,
+                    seed=bool(params.get("seed")),
+                    seed_template=(params.get("seed_template") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":
