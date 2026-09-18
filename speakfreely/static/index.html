@@ -49,6 +49,10 @@
                border: 1px solid var(--border); border-radius: 8px; padding: 10px;
                min-height: 80px; max-height: 240px; overflow: auto; }
   button.mini { width: auto; padding: 3px 10px; font-size: 12px; }
+  .status-banner { padding: 8px 10px; border-radius: 8px; margin: 8px 0; font-size: 13px; }
+  .status-banner.ok { background: #14301f; color: var(--ok); border: 1px solid #1f4d33; }
+  .status-banner.err { background: #301818; color: var(--err); border: 1px solid #4d2626; }
+  .status-banner.busy { background: #1b2331; color: var(--text); border: 1px solid var(--border); }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
            padding: 14px 14px 26px; height: 100%; overflow-y: auto; overflow-x: hidden; }
   .panel.left { display: flex; flex-direction: column; padding-bottom: 14px; }
@@ -191,13 +195,13 @@
 
     <div class="row">
       <label style="margin:0">预热示例 <input id="prime" type="number" value="0" min="0" max="4" /></label>
-      <label style="margin:0">替换文案
-        <select id="prefill" style="width:100%;background:#0d1016;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px">
-          <option value="">默认</option>
-          <option value="template">模板</option>
-          <option value="auto">LLM 生成</option>
-        </select>
-      </label>
+      <div style="margin:0">
+        <label style="margin:0 0 3px">替换文案</label>
+        <div class="dd" id="dd-prefill">
+          <button type="button" class="dd-btn">默认</button>
+          <div class="dd-menu" hidden></div>
+        </div>
+      </div>
     </div>
     <div class="checks" style="margin-top:10px">
       <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
@@ -276,12 +280,9 @@
 
   <section class="panel right clean">
     <label>拒绝消息（勾选要替换的；点击文字可看全文）</label>
-    <div class="row" style="margin:0 0 8px">
-      <select id="clean-mode" style="width:100%;background:#0d1016;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px">
-        <option value="template">替换为默认模板文案</option>
-        <option value="custom">替换为自定义文案</option>
-        <option value="auto">用 LLM 生成替换文案</option>
-      </select>
+    <div class="dd" id="dd-clean-mode">
+      <button type="button" class="dd-btn">替换为默认模板文案</button>
+      <div class="dd-menu" hidden></div>
     </div>
     <input id="clean-custom" placeholder="自定义替换文案" hidden />
     <div id="clean-list" class="muted" style="margin-top:8px">先选择一个会话</div>
@@ -290,6 +291,7 @@
       <button class="primary" id="btn-clean-preview">预览</button>
       <button id="btn-clean-run">执行替换</button>
     </div>
+    <div id="clean-status" class="status-banner" hidden></div>
 
     <label>备份 / 恢复</label>
     <div id="clean-backups" class="muted">暂无</div>
@@ -455,6 +457,24 @@ const modelDD = Dropdown("dd-model", {
   placeholder: "默认（点击选择，可输入过滤）",
   filterable: true,
 });
+const prefillDD = Dropdown("dd-prefill", { placeholder: "默认" });
+prefillDD.setItems([
+  { value: "", label: "默认" },
+  { value: "template", label: "模板" },
+  { value: "auto", label: "LLM 生成" },
+]);
+prefillDD.setValue("");
+
+const cleanModeDD = Dropdown("dd-clean-mode", {
+  placeholder: "替换为默认模板文案",
+  onChange: (value) => { $("clean-custom").hidden = value !== "custom"; },
+});
+cleanModeDD.setItems([
+  { value: "template", label: "替换为默认模板文案" },
+  { value: "custom", label: "替换为自定义文案" },
+  { value: "auto", label: "用 LLM 生成替换文案" },
+]);
+cleanModeDD.setValue("template");
 
 /* ── 数据加载 ─────────────────────────────────────────────────────────── */
 async function loadStatus() {
@@ -569,7 +589,7 @@ async function run(dryRun) {
     goal: goal,
     stages: session ? null : (selectedStages().join(",") || null),
     prime: parseInt($("prime").value || "0", 10),
-    prefill: $("prefill").value || null,
+    prefill: prefillDD.getValue() || null,
     dry_run: !!dryRun,
   };
   log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);
@@ -635,9 +655,7 @@ $("btn-refresh").addEventListener("click", async () => { await loadStatus(); awa
 $("btn-scan").addEventListener("click", scanRefusals);
 $("btn-clean-preview").addEventListener("click", () => runClean(true));
 $("btn-clean-run").addEventListener("click", () => runClean(false));
-$("clean-mode").addEventListener("change", () => {
-  $("clean-custom").hidden = $("clean-mode").value !== "custom";
-});
+
 
 /* ── 页签切换 ───────────────────────────────────────────────────────── */
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -736,7 +754,7 @@ async function loadBackups() {
 }
 
 function cleanPayload(dryRun) {
-  const mode = $("clean-mode").value;
+  const mode = cleanModeDD.getValue();
   const payload = {
     session: cleanState.session,
     dry_run: dryRun,
@@ -747,28 +765,56 @@ function cleanPayload(dryRun) {
   return payload;
 }
 
+function setCleanStatus(kind, text) {
+  const el = $("clean-status");
+  el.className = "status-banner " + kind;
+  el.textContent = text;
+  el.hidden = !text;
+}
+
 async function runClean(dryRun) {
-  if (!cleanState.session) { $("clean-log").textContent = "请先选择一个会话"; return; }
-  if (!cleanState.selected.size) { $("clean-log").textContent = "请至少勾选一条拒绝"; return; }
-  const mode = $("clean-mode").value;
-  if (mode === "custom" && !$("clean-custom").value.trim()) { $("clean-log").textContent = "请填写自定义文案"; return; }
+  const mode = cleanModeDD.getValue();
+  if (!cleanState.session) { setCleanStatus("err", "请先选择一个会话"); return; }
+  if (!cleanState.selected.size) { setCleanStatus("err", "请至少勾选一条拒绝"); return; }
+  if (mode === "custom" && !$("clean-custom").value.trim()) { setCleanStatus("err", "请填写自定义文案"); return; }
+
+  const previewBtn = $("btn-clean-preview");
+  const runBtn = $("btn-clean-run");
+  previewBtn.disabled = runBtn.disabled = true;
+  setCleanStatus("busy", dryRun ? "预览中…" : "执行中…（会先备份整库）");
   try {
     const result = await api("/api/clean", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cleanPayload(dryRun)),
     });
     const entry = (result.sessions || [])[0] || {};
-    const lines = [dryRun ? "预览（未修改）：" : "执行结果："];
+    const lines = [];
     (entry.details || []).forEach((detail) => {
-      lines.push(`  #${detail.line_num} ${detail.change_type}${detail.new_content ? " → " + detail.new_content.slice(0, 60) : ""}`);
+      lines.push(`#${detail.line_num} ${detail.change_type}${detail.new_content ? " → " + detail.new_content.slice(0, 60) : ""}`);
     });
-    if (!entry.modified) lines.push("  无需修改");
-    if (entry.backup) lines.push("  备份: " + entry.backup);
-    if (entry.error) lines.push("  错误: " + entry.error);
-    $("clean-log").textContent = lines.join("\n");
-    if (!dryRun) { await selectCleanSession(cleanState.session); await loadBackups(); }
+    if (!entry.modified) lines.push("无需修改");
+    if (entry.backup) lines.push("备份: " + entry.backup);
+    if (entry.error) lines.push("错误: " + entry.error);
+    $("clean-log").textContent = lines.join("\n") || "（无变更明细）";
+
+    if (entry.error) {
+      setCleanStatus("err", "执行失败：" + entry.error);
+    } else if (!entry.modified) {
+      setCleanStatus("ok", dryRun ? "预览完成：没有需要修改的条目" : "没有需要修改的条目");
+    } else if (dryRun) {
+      const count = (entry.details || []).length;
+      setCleanStatus("ok", `预览完成：将替换 ${count} 处（未修改数据库）`);
+    } else {
+      const count = (entry.details || []).length;
+      setCleanStatus("ok", `执行成功：已替换 ${count} 处${entry.backup ? "，已备份（可在下方恢复）" : ""}`);
+      await selectCleanSession(cleanState.session);
+      await loadBackups();
+    }
   } catch (e) {
-    $("clean-log").textContent = "失败: " + e.message;
+    setCleanStatus("err", "失败: " + e.message);
+    $("clean-log").textContent = String(e.message || e);
+  } finally {
+    previewBtn.disabled = runBtn.disabled = false;
   }
 }
 

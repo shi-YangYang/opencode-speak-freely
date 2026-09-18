@@ -145,6 +145,19 @@ Rules:
    在只读失败时回退为普通连接 + `PRAGMA query_only=1`（不写数据，仅允许
    SQLite 自行创建 WAL 索引）。回归测试：`tests/test_core.py::TestWalBackupCopy`。
 
+## 浏览器冒烟测试
+
+Web UI 的关键交互用无头 Chrome（CDP）真实点击验证，脚本：
+`scripts/browser-smoke.js`（只读，不修改数据库）。
+
+```bash
+./scripts/speakfreely-web --no-browser &
+node scripts/browser-smoke.js            # 默认 http://127.0.0.1:8788/
+```
+
+检查：页签切换（计算样式）、扫描拒绝、列出拒绝条目、下拉菜单位置、
+预览提示、控制台 0 报错。依赖本机 Chrome + Node。
+
 ## 改造后的验证方法
 
 任何改造都应做 A/B 对照（固定模型、固定请求）：
