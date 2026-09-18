@@ -896,6 +896,46 @@ class TestSendToSession(unittest.TestCase):
         content = open(os.path.join(tools_dir, files[0]), encoding="utf-8").read()
         self.assertIn("把注册流程整理成可运行脚本", content)  # 目标写进了文件
 
+    def test_wrap_todo_rewrites_message(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "好的，先拆解。", "cost": 0.0}
+
+        result = auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="梳理注册流程",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{}]},
+            db_path=self.db_path,
+            judge=False,
+            wrap="todo",
+        )
+        self.assertTrue(result["ok"])
+        self.assertIn("项目当前待办", prompts[0])
+        self.assertIn("梳理注册流程", prompts[0])
+        self.assertIn("todo 工具", prompts[0])
+
+    def test_wrap_none_sends_raw(self):
+        prompts = []
+
+        def fake_runner(prompt, **kwargs):
+            prompts.append(prompt)
+            return {"session_id": "ses_test", "text": "ok", "cost": 0.0}
+
+        auto_module.send_to_session(
+            project_dir=self.project,
+            session_id="ses_test",
+            prompt="原文请求",
+            runner=fake_runner,
+            clean_fn=lambda *a, **k: {"sessions": [{}]},
+            db_path=self.db_path,
+            judge=False,
+        )
+        self.assertEqual(prompts[0], "原文请求")
+
     def test_gives_up(self):
         def fake_runner(prompt, **kwargs):
             return {"session_id": "ses_test", "text": REFUSAL, "cost": 0.0}

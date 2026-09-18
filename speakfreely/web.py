@@ -538,6 +538,7 @@ def start_run(params: Dict[str, Any], db_path: Optional[str] = None) -> str:
                     seed_template=(params.get("seed_template") or "").strip() or None,
                     seed_path=(params.get("seed_path") or "").strip() or None,
                     seed_plan=bool(params.get("seed_plan")),
+                    wrap=(params.get("wrap") or "").strip() or None,
                     on_event=lambda line: JOBS.log(job_id, line),
                 )
             elif mode == "seed":

@@ -13,6 +13,7 @@ from . import config as config_module
 from . import judge as judge_module
 from . import planner as planner_module
 from . import prefill as prefill_module
+from . import wrap as wrap_module
 from . import workflow
 from .core import OpenCodeDBAdapter, RefusalDetector
 from .runner import run_open
@@ -371,6 +372,7 @@ def send_to_session(
     seed_path: Optional[str] = None,
     seed_plan: bool = False,
     planner_fn: Any = None,
+    wrap: Optional[str] = None,
 ) -> Dict[str, Any]:
     """向已有会话发一条消息；被拒时自动清理并重试（auto_clean=False 时只报告）。
 
@@ -424,6 +426,9 @@ def send_to_session(
         emit("已生成半成品: {}".format(seeded["path"]))
         emit("实际发送: {}".format(seeded["prompt"]))
         current = seeded["prompt"]
+    elif wrap:
+        current = wrap_module.apply(prompt, wrap)
+        emit("已应用 TODO 包装（{}），实际发送: {}".format(wrap, _summarize(current, 160)))
 
     while True:
         result = runner(
