@@ -312,20 +312,28 @@
   <section class="panel left" style="grid-column: 1 / -1; max-width: 720px; margin: 0 auto; width: 100%">
     <label>LLM 配置（用于自动规划 / 裁判 / 生成替换文案，支持 OpenAI 兼容接口）</label>
     <div id="settings-detected" class="muted" style="margin:-2px 0 8px" hidden></div>
+    <label>Provider（自动检测自 OpenCode 配置与登录）</label>
+    <div class="dd" id="dd-provider">
+      <button type="button" class="dd-btn">加载中…</button>
+      <div class="dd-menu" hidden></div>
+    </div>
+
+    <label>模型</label>
+    <div class="dd filterable" id="dd-set-model">
+      <input class="dd-input" placeholder="默认（点击选择，可输入过滤）" autocomplete="off" />
+      <div class="dd-menu" hidden></div>
+    </div>
+
+    <label>手动覆盖（可选，留空即用 Provider 的配置）</label>
     <div class="row" style="margin-top:0">
       <label style="margin:0">API Endpoint
         <input id="set-endpoint" placeholder="https://.../v1" />
       </label>
-    </div>
-    <div class="row">
       <label style="margin:0">API Key
-        <input id="set-key" placeholder="留空 = 保持已配置的密钥" />
+        <input id="set-key" placeholder="留空 = 保持已有密钥" />
       </label>
     </div>
     <div class="row">
-      <label style="margin:0">模型名称
-        <input id="set-model" placeholder="如 gpt-4o-mini / glm-5.2" />
-      </label>
       <label style="margin:0">超时（秒）
         <input id="set-timeout" type="number" min="5" max="300" />
       </label>
@@ -510,6 +518,16 @@ prefillDD.setItems([
   { value: "auto", label: "LLM 生成" },
 ]);
 prefillDD.setValue("");
+
+const providerDD = Dropdown("dd-provider", {
+  placeholder: "选择 Provider",
+  onChange: (value) => applyProviderModels(value),
+});
+const setModelDD = Dropdown("dd-set-model", {
+  placeholder: "默认（点击选择，可输入过滤）",
+  filterable: true,
+});
+const providerModels = {};
 
 const cleanModeDD = Dropdown("dd-clean-mode", {
   placeholder: "替换为默认模板文案",
@@ -874,8 +892,27 @@ async function runClean(dryRun) {
 }
 
 /* ── 设置页 ─────────────────────────────────────────────────────────── */
+function applyProviderModels(providerId) {
+  const models = providerModels[providerId] || [];
+  setModelDD.setItems(models.map((m) => ({ value: m, label: m })));
+}
+
 async function loadSettings() {
   const data = await api("/api/settings");
+  const list = data.providers || [];
+  list.forEach((entry) => { providerModels[entry.id] = entry.models; });
+  providerDD.setItems(list.map((entry) => ({
+    value: entry.id,
+    label: entry.id,
+    sub: `${entry.models.length} 个模型`,
+  })));
+  const currentProvider = data.llm.provider || data.llm.detected_provider || (list[0] ? list[0].id : "");
+  if (currentProvider) {
+    providerDD.setValue(currentProvider);
+    applyProviderModels(currentProvider);
+  }
+  setModelDD.setValue(data.llm.model || "");
+
   const hint = $("settings-detected");
   if (data.llm.detected) {
     hint.hidden = false;
@@ -884,8 +921,7 @@ async function loadSettings() {
   } else {
     hint.hidden = true;
   }
-  $("set-endpoint").value = data.llm.endpoint || "";
-  $("set-model").value = data.llm.model || "";
+  $("set-endpoint").value = "";
   $("set-timeout").value = data.llm.timeout || 30;
   $("set-key").value = "";
   $("set-key").placeholder = data.llm.api_key_configured ? "已配置；留空保持不变" : "sk-...";
@@ -904,8 +940,9 @@ function setSettingsStatus(kind, text) {
 function settingsPayload() {
   return {
     llm: {
+      provider: providerDD.getValue(),
       endpoint: $("set-endpoint").value.trim(),
-      model: $("set-model").value.trim(),
+      model: setModelDD.getValue().trim(),
       api_key: $("set-key").value.trim(),
       timeout: parseFloat($("set-timeout").value || "30"),
     },

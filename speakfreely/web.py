@@ -225,15 +225,25 @@ def get_settings() -> Dict[str, Any]:
     configured = cfg.get("llm") or {}
     detected = opencode_llm.detect() or {}
     effective = config_module.llm_settings(cfg)
+    providers = [
+        {
+            "id": entry["provider"],
+            "source": entry["source"],
+            "models": entry["models"],
+        }
+        for entry in opencode_llm.detect_all()
+    ]
     return {
         "llm": {
+            "provider": configured.get("provider") or "",
             "endpoint": effective.get("endpoint") or "",
             "model": effective.get("model") or "",
             "timeout": configured.get("timeout") or 30,
             "api_key_configured": bool(effective.get("api_key")),
-            "detected": bool(detected) and not configured.get("endpoint"),
+            "detected": bool(detected),
             "detected_provider": detected.get("provider") or "",
         },
+        "providers": providers,
         "planner_enabled": bool((cfg.get("planner") or {}).get("enabled")),
         "judge_enabled": bool((cfg.get("judge") or {}).get("enabled")),
         "prefill_mode": (cfg.get("prefill") or {}).get("mode") or "template",
@@ -245,7 +255,7 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     incoming = payload.get("llm") or {}
     llm = cfg.setdefault("llm", {})
 
-    for key in ("endpoint", "model"):
+    for key in ("provider", "endpoint", "model"):
         if key in incoming:
             llm[key] = str(incoming[key]).strip()
     if incoming.get("api_key"):

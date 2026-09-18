@@ -10,6 +10,7 @@ from .core.file_ops import atomic_write_json
 
 DEFAULTS: Dict[str, Any] = {
     "llm": {
+        "provider": "",
         "endpoint": "",
         "api_key": "",
         "model": "",
@@ -89,9 +90,19 @@ def llm_settings(config: Dict[str, Any], section: Optional[Dict[str, Any]] = Non
         if value:
             merged[key] = value
 
-    if not merged.get("endpoint") or not merged.get("model"):
-        from . import opencode_llm
+    from . import opencode_llm
 
+    provider_id = str(merged.get("provider") or "")
+    if provider_id:
+        entry = opencode_llm.resolve(provider_id)
+        if entry:
+            for key in ("endpoint", "api_key", "model"):
+                if not merged.get(key):
+                    merged[key] = entry["endpoint"] if key == "endpoint" else (
+                        entry["api_key"] if key == "api_key" else (entry["models"][0] if entry["models"] else "")
+                    )
+
+    if not merged.get("endpoint") or not merged.get("model"):
         detected = opencode_llm.detect()
         if detected:
             for key in ("endpoint", "api_key", "model"):
