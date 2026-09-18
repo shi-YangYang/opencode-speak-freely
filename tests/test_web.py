@@ -153,6 +153,29 @@ class TestApi(WebCase):
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0]["id"], "ses_test")
 
+    def test_project_without_sessions_is_listed(self):
+        # 模拟 OpenCode 里创建但没建会话的项目：project 表有登记、目录存在
+        empty_dir = os.path.join(self.temp_home, "empty-project")
+        os.makedirs(empty_dir, exist_ok=True)
+        conn = __import__("sqlite3").connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO project VALUES (?,?,?,?,?)",
+                ("proj_empty", empty_dir, "empty", 3, 3),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _, projects = self.get("/api/projects")
+        directories = {os.path.realpath(p["directory"]): p for p in projects}
+        self.assertIn(os.path.realpath(empty_dir), directories)
+        self.assertEqual(directories[os.path.realpath(empty_dir)]["sessions"], 0)
+
+        # 已有会话的项目不会因为 project 行重复出现
+        real = [os.path.realpath(p["directory"]) for p in projects]
+        self.assertEqual(len(real), len(set(real)))
+
     def test_session_preview_flags_refusal(self):
         _, data = self.get("/api/session?id=ses_test")
         self.assertGreaterEqual(data["refusals"], 1)

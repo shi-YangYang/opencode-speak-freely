@@ -91,17 +91,47 @@ def _adapter(db_path: Optional[str]) -> OpenCodeDBAdapter:
 
 
 def list_projects(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    sessions = _adapter(db_path).list_sessions()
+    """会话目录 + project 表登记目录（含还没有会话的项目）。"""
+    adapter = _adapter(db_path)
     grouped: Dict[str, Dict[str, Any]] = {}
-    for session in sessions:
+    last_seen: Dict[str, str] = {}
+
+    for session in adapter.list_sessions():
         directory = session.get("directory") or ""
         if not directory or not os.path.isdir(directory):
             continue
+        key = os.path.realpath(directory)
         entry = grouped.setdefault(
-            directory,
-            {"directory": directory, "sessions": 0, "last": session.get("mtime_str", ""), "exists": os.path.isdir(directory)},
+            key,
+            {"directory": directory, "sessions": 0, "last": "", "exists": True},
         )
         entry["sessions"] += 1
+        stamp = session.get("mtime_str", "")
+        if stamp > last_seen.get(key, ""):
+            last_seen[key] = stamp
+
+    for project in adapter.list_project_directories():
+        directory = project.get("directory") or ""
+        if not directory or directory == "/" or not os.path.isdir(directory):
+            continue
+        key = os.path.realpath(directory)
+        if key in grouped:
+            continue
+        stamp = ""
+        if project.get("mtime"):
+            from datetime import datetime
+
+            stamp = datetime.fromtimestamp(project["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
+        grouped[key] = {
+            "directory": directory,
+            "sessions": 0,
+            "last": stamp,
+            "exists": True,
+        }
+        last_seen[key] = stamp
+
+    for key, entry in grouped.items():
+        entry["last"] = last_seen.get(key, entry.get("last", ""))
     return sorted(grouped.values(), key=lambda item: item["last"], reverse=True)
 
 
