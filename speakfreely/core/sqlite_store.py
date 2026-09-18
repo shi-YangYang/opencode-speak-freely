@@ -290,6 +290,28 @@ class OpenCodeDBAdapter:
         backups.sort(key=lambda item: item["mtime"], reverse=True)
         return backups
 
+    def delete_backup(self, backup_path: str) -> None:
+        """删除本数据库的备份文件（含 -shm/-wal 副本），拒绝任何其他路径。"""
+        directory = os.path.realpath(os.path.dirname(self.db_path))
+        target = os.path.realpath(backup_path)
+        name = os.path.basename(self.db_path)
+        basename = os.path.basename(target)
+
+        if os.path.dirname(target) != directory or not (
+            basename.startswith(name + ".") and basename.endswith(".bak")
+        ):
+            raise ValueError("不是本数据库的备份文件: {}".format(backup_path))
+        if not os.path.isfile(target):
+            raise FileNotFoundError("备份文件不存在: {}".format(backup_path))
+
+        os.remove(target)
+        for suffix in ("-shm", "-wal"):
+            try:
+                os.remove(target + suffix)
+            except FileNotFoundError:
+                pass
+        logger.info("已删除数据库备份: %s", target)
+
     def restore_database(self, backup_path: str) -> None:
         if not os.path.exists(backup_path):
             raise FileNotFoundError("备份文件不存在: {}".format(backup_path))

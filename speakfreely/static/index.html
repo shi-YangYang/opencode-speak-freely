@@ -49,6 +49,7 @@
                border: 1px solid var(--border); border-radius: 8px; padding: 10px;
                min-height: 80px; max-height: 240px; overflow: auto; }
   button.mini { width: auto; padding: 3px 10px; font-size: 12px; }
+  button.mini.danger { border-color: #5a3333; background: #2a1a1a; color: #f0a0a0; }
   .status-banner { padding: 8px 10px; border-radius: 8px; margin: 8px 0; font-size: 13px; }
   .status-banner.ok { background: #14301f; color: var(--ok); border: 1px solid #1f4d33; }
   .status-banner.err { background: #301818; color: var(--err); border: 1px solid #4d2626; }
@@ -123,7 +124,8 @@
   #log::-webkit-scrollbar-thumb:hover, .panel::-webkit-scrollbar-thumb:hover, .dd-menu::-webkit-scrollbar-thumb:hover, .tutorial::-webkit-scrollbar-thumb:hover,
   #preview::-webkit-scrollbar-thumb:hover, textarea::-webkit-scrollbar-thumb:hover { background: #4d5a78; }
   #preview { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;
-             flex: 1 1 auto; min-height: 48px; overflow: auto; }
+             flex: 0 0 auto; min-height: 48px; max-height: 40vh; overflow: auto; }
+  #preview.grow { flex: 1 1 auto; }
   .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; background: #10141b; font-size: 13px;
          cursor: pointer; transition: background 0.15s; }
   .msg:hover { background: #1a2130; }
@@ -194,33 +196,22 @@
     <label>阶段（新会话模式，鼠标悬浮看说明）</label>
     <div class="checks" id="stages"></div>
 
-    <label>生成位置（可选，代码上下文模式）</label>
-    <input id="seed-path" placeholder="如 webui/task_page.py、docs/plan.md；留空=tools/task_harness.py" />
-    <div class="row">
-      <label style="margin:0">预热示例 <input id="prime" type="number" value="0" min="0" max="4" /></label>
-      <div style="margin:0">
-        <label style="margin:0 0 3px">替换文案</label>
-        <div class="dd" id="dd-prefill">
-          <button type="button" class="dd-btn">默认</button>
-          <div class="dd-menu" hidden></div>
-        </div>
-      </div>
+    <div style="margin-top:14px">
+      <label style="margin-top:0">生成位置（可选，代码上下文模式）</label>
+      <input id="seed-path" placeholder="留空 = 自动决定；也可填 webui/page.py、docs/plan.md" />
     </div>
-    <div class="checks" style="margin-top:10px">
+
+    <label>选项</label>
+    <div class="checks">
       <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
       <label style="cursor:pointer" data-tip="已有会话模式：被拒时自动把拒绝替换成继续文案并重试"><input type="checkbox" id="auto-clean" checked> 被拒自动清理</label>
       <label style="cursor:pointer" data-tip="已有会话模式：把目标写进半成品文件，实际发送「补全 TODO」而不是原始请求（同新建会话的 seed 机制）"><input type="checkbox" id="use-seed" checked> 代码上下文模式</label>
-      <label style="cursor:pointer" data-tip="让 LLM 根据项目和需求自动决定：从哪个文件开始、用什么语言、哪些步骤（需在设置里配置 planner；填写了「生成位置」时以位置为准）"><input type="checkbox" id="seed-plan" checked> 自动规划</label>
-      <label style="cursor:pointer" data-tip="不生成任何文件：把请求包装成「项目待办中的一项」，让模型用自带 todo 能力拆解并执行（与代码上下文模式二选一，代码上下文优先）"><input type="checkbox" id="wrap-todo"> TODO 包装（不落文件）</label>
+      <label style="cursor:pointer" data-tip="让 LLM 根据项目和需求自动决定：从哪个文件开始、用什么语言、哪些步骤（需在设置页配置 Provider 并开启）"><input type="checkbox" id="seed-plan" checked> 自动规划</label>
     </div>
 
-    <div class="row">
+    <div class="row" style="margin-top:14px">
       <button class="primary" id="btn-run">▶ 运行</button>
       <button id="btn-dry">预览计划</button>
-    </div>
-    <div class="row">
-      <button id="btn-clean" class="danger">清理会话</button>
-      <button id="btn-watch">watch</button>
       <button id="btn-refresh">刷新</button>
     </div>
   </section>
@@ -248,8 +239,8 @@
 
       <h3>被拒了怎么办</h3>
       <ul>
-        <li>点 <b>清理该会话</b>：扫描该会话里的拒绝回复并替换（自动整库备份）</li>
-        <li>点 <b>开启 watch</b>：放到后台轮询，产出新拒绝自动替换；之后在 Desktop 里发"继续"即可</li>
+        <li>切到 <b>清理拒绝</b> 页：扫描含拒绝的会话，勾选后替换（自动整库备份）</li>
+        <li>清理页的 <b>watch</b> 开关：放到后台轮询，新拒绝自动替换；之后在 Desktop 里发"继续"即可</li>
         <li>想回滚：终端跑 <code>./scripts/speakfreely restore</code></li>
       </ul>
 
@@ -257,8 +248,8 @@
       <ul>
         <li>五个阶段鼠标悬浮有说明；不想跑全流程就取消勾选要跳过的阶段</li>
         <li>不同模型的拒审阈值差别很大——连续被拒时，<b>换模型比改提示词有效</b></li>
-        <li>"预热示例"会在会话前注入几对示例问答（many-shot），可选</li>
-        <li>"替换文案 = LLM 生成"需要先在 <code>~/.config/speakfreely/config.json</code> 配好模型</li>
+        <li>被拒时的替换文案由「设置」页的 LLM 开关控制（推荐开启）</li>
+        <li>替换文案与自动规划在「设置」页配置（Provider 自动检测，无需手填密钥）</li>
       </ul>
 
       <h3>命令行的等价操作</h3>
@@ -280,13 +271,17 @@
     </div>
     <div class="row" style="margin-top:8px">
       <button class="primary" id="btn-scan">扫描拒绝</button>
+      <button id="btn-watch">开启 watch</button>
     </div>
     <label>含拒绝的会话</label>
     <div id="clean-sessions" class="muted">选择项目后点「扫描拒绝」</div>
   </section>
 
   <section class="panel right clean">
-    <label>拒绝消息（勾选要替换的；点击文字可看全文）</label>
+    <label style="display:flex;align-items:center;gap:8px">
+      拒绝消息（勾选要替换的；点击文字可看全文）
+      <button class="mini" id="btn-select-all" style="margin-left:auto">全不选</button>
+    </label>
     <div class="dd" id="dd-clean-mode">
       <button type="button" class="dd-btn">替换为默认模板文案</button>
       <div class="dd-menu" hidden></div>
@@ -309,27 +304,36 @@
 </main>
 
 <main id="view-settings" hidden>
-  <section class="panel left" style="grid-column: 1 / -1; max-width: 720px; margin: 0 auto; width: 100%">
+  <section class="panel left" style="grid-column: 1 / -1; max-width: 860px; margin: 0 auto; width: 100%">
     <label>LLM 配置（用于自动规划 / 裁判 / 生成替换文案，支持 OpenAI 兼容接口）</label>
+    <div id="settings-loading" class="muted" style="margin:-2px 0 8px">加载中…</div>
     <div id="settings-detected" class="muted" style="margin:-2px 0 8px" hidden></div>
-    <div class="row" style="margin-top:0">
-      <label style="margin:0">API Endpoint
-        <input id="set-endpoint" placeholder="https://.../v1" />
-      </label>
+    <label>Provider（自动检测自 OpenCode 配置与登录）</label>
+    <div class="dd" id="dd-provider">
+      <button type="button" class="dd-btn">加载中…</button>
+      <div class="dd-menu" hidden></div>
     </div>
-    <div class="row">
-      <label style="margin:0">API Key
-        <input id="set-key" placeholder="留空 = 保持已配置的密钥" />
-      </label>
+
+    <label>模型</label>
+    <div class="dd filterable" id="dd-set-model">
+      <input class="dd-input" placeholder="默认（点击选择，可输入过滤）" autocomplete="off" />
+      <div class="dd-menu" hidden></div>
     </div>
-    <div class="row">
-      <label style="margin:0">模型名称
-        <input id="set-model" placeholder="如 gpt-4o-mini / glm-5.2" />
-      </label>
-      <label style="margin:0">超时（秒）
-        <input id="set-timeout" type="number" min="5" max="300" />
-      </label>
-    </div>
+
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer">高级：手动覆盖 endpoint / key / 超时（留空即用 Provider 配置）</summary>
+      <div class="row" style="margin-top:8px">
+        <label style="margin:0">API Endpoint
+          <input id="set-endpoint" placeholder="https://.../v1" />
+        </label>
+        <label style="margin:0">API Key
+          <input id="set-key" placeholder="留空 = 保持已有密钥" />
+        </label>
+        <label style="margin:0">超时（秒）
+          <input id="set-timeout" type="number" min="5" max="300" />
+        </label>
+      </div>
+    </details>
 
     <label>功能开关</label>
     <div class="checks">
@@ -503,13 +507,15 @@ const modelDD = Dropdown("dd-model", {
   placeholder: "默认（点击选择，可输入过滤）",
   filterable: true,
 });
-const prefillDD = Dropdown("dd-prefill", { placeholder: "默认" });
-prefillDD.setItems([
-  { value: "", label: "默认" },
-  { value: "template", label: "模板" },
-  { value: "auto", label: "LLM 生成" },
-]);
-prefillDD.setValue("");
+const providerDD = Dropdown("dd-provider", {
+  placeholder: "选择 Provider",
+  onChange: (value) => applyProviderModels(value),
+});
+const setModelDD = Dropdown("dd-set-model", {
+  placeholder: "默认（点击选择，可输入过滤）",
+  filterable: true,
+});
+const providerModels = {};
 
 const cleanModeDD = Dropdown("dd-clean-mode", {
   placeholder: "替换为默认模板文案",
@@ -553,7 +559,7 @@ async function loadSessions() {
   ]);
   sessionDD.setValue("");
   $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。";
-  updateWatchButton();
+  $("preview").classList.remove("grow");
 }
 
 async function loadModels() {
@@ -576,6 +582,7 @@ async function loadStages() {
 let previewToken = 0;
 async function loadPreview() {
   const id = sessionDD.getValue();
+  $("preview").classList.toggle("grow", Boolean(id));
   if (!id) { $("preview").textContent = "新会话模式：目标会写进半成品文件后自动跑全流程。"; return; }
   const token = ++previewToken;
   $("preview").textContent = "加载中…";
@@ -634,11 +641,8 @@ async function run(dryRun) {
     model: modelDD.getValue().trim(),
     goal: goal,
     stages: session ? null : (selectedStages().join(",") || null),
-    prime: parseInt($("prime").value || "0", 10),
-    prefill: prefillDD.getValue() || null,
     auto_clean: $("auto-clean").checked,
     seed: $("use-seed").checked,
-    wrap: (!$("use-seed").checked && $("wrap-todo").checked) ? "todo" : null,
     seed_path: $("seed-path").value.trim(),
     seed_plan: $("seed-plan").checked && !$("seed-path").value.trim(),
     dry_run: !!dryRun,
@@ -680,28 +684,28 @@ async function cleanSession() {
 }
 
 function updateWatchButton() {
-  const project = projectDD.getValue();
+  const project = cleanProjectDD ? cleanProjectDD.getValue() : "";
   const on = state.watching.includes(project);
   $("btn-watch").textContent = on ? "停止 watch" : "开启 watch";
   $("btn-watch").classList.toggle("primary", on);
 }
 async function toggleWatch() {
-  const project = projectDD.getValue();
-  if (!project) { log("请先选择项目"); return; }
+  const project = cleanProjectDD.getValue();
+  if (!project) { setCleanStatus("err", "请先选择项目"); return; }
   const action = state.watching.includes(project) ? "stop" : "start";
   const res = await api("/api/watch", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project, action }),
   });
-  log(`watch ${action}: ${res.status}`);
+  setCleanStatus("ok", `watch ${action}: ${res.status}`);
   await loadStatus();
   setTimeout(loadStatus, 1200);
 }
 
 $("btn-run").addEventListener("click", () => run(false));
 $("btn-dry").addEventListener("click", () => run(true));
-$("btn-clean").addEventListener("click", cleanSession);
 $("btn-watch").addEventListener("click", toggleWatch);
+$("btn-select-all").addEventListener("click", toggleSelectAll);
 $("btn-refresh").addEventListener("click", async () => { await loadStatus(); await loadProjects(); await loadModels(); log("已刷新"); });
 $("btn-scan").addEventListener("click", scanRefusals);
 $("btn-clean-preview").addEventListener("click", () => runClean(true));
@@ -774,6 +778,7 @@ async function selectCleanSession(id) {
        <button class="mini" type="button" data-full="${item.index}">全文</button>
      </label>`).join("");
   cleanState.selected = new Set(data.refusals.map((item) => item.line));
+  $("btn-select-all").textContent = "全不选";
   bindTooltips($("clean-list"));
   $("clean-list").querySelectorAll("input[type=checkbox]").forEach((box) =>
     box.addEventListener("change", () => {
@@ -787,6 +792,17 @@ async function selectCleanSession(id) {
     }));
 }
 
+function toggleSelectAll() {
+  const boxes = Array.from(document.querySelectorAll("#clean-list input[type=checkbox]"));
+  if (!boxes.length) return;
+  const anyUnchecked = boxes.some((box) => !box.checked);
+  boxes.forEach((box) => {
+    box.checked = anyUnchecked;
+    anyUnchecked ? cleanState.selected.add(Number(box.dataset.line)) : cleanState.selected.delete(Number(box.dataset.line));
+  });
+  $("btn-select-all").textContent = anyUnchecked ? "全不选" : "全选";
+}
+
 async function loadBackups() {
   try {
     const backups = await api("/api/backups");
@@ -794,16 +810,28 @@ async function loadBackups() {
     $("clean-backups").innerHTML = backups.slice(0, 6).map((item) =>
       `<div class="list-item">
          <span class="item-main">${esc(item.mtime_str)} · ${Math.round(item.size / 1048576)}MB</span>
-         <button class="mini" data-path="${esc(item.path)}">恢复</button>
+         <button class="mini" data-restore="${esc(item.path)}">恢复</button>
+         <button class="mini" data-delete="${esc(item.path)}">删除</button>
        </div>`).join("");
-    $("clean-backups").querySelectorAll("button[data-path]").forEach((btn) =>
+    $("clean-backups").querySelectorAll("button[data-restore]").forEach((btn) =>
       btn.addEventListener("click", async () => {
         if (!confirm("从该备份恢复？当前数据库会被覆盖。")) return;
         try {
           await api("/api/restore", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ backup: btn.dataset.path }) });
-          $("clean-log").textContent = "已从备份恢复: " + btn.dataset.path;
-        } catch (e) { $("clean-log").textContent = "恢复失败: " + e.message; }
+            body: JSON.stringify({ backup: btn.dataset.restore }) });
+          setCleanStatus("ok", "已从备份恢复");
+          $("clean-log").textContent = "已从备份恢复: " + btn.dataset.restore;
+        } catch (e) { setCleanStatus("err", "恢复失败: " + e.message); }
+      }));
+    $("clean-backups").querySelectorAll("button[data-delete]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("删除该备份？不可恢复。")) return;
+        try {
+          await api("/api/backups/delete", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backup: btn.dataset.delete }) });
+          setCleanStatus("ok", "备份已删除");
+          await loadBackups();
+        } catch (e) { setCleanStatus("err", "删除失败: " + e.message); }
       }));
   } catch (e) { $("clean-backups").innerHTML = '<div class="muted">备份读取失败</div>'; }
 }
@@ -874,18 +902,43 @@ async function runClean(dryRun) {
 }
 
 /* ── 设置页 ─────────────────────────────────────────────────────────── */
+function applyProviderModels(providerId) {
+  const models = providerModels[providerId] || [];
+  setModelDD.setItems(models.map((m) => ({ value: m, label: m })));
+}
+
 async function loadSettings() {
+  $("settings-loading").hidden = false;
   const data = await api("/api/settings");
+  $("settings-loading").hidden = true;
+  const list = data.providers || [];
+  list.forEach((entry) => { providerModels[entry.id] = entry.models; });
+  providerDD.setItems(list.map((entry) => ({
+    value: entry.id,
+    label: entry.id,
+    sub: `${entry.models.length} 个模型`,
+  })));
+  const currentProvider = data.llm.provider || data.llm.detected_provider || (list[0] ? list[0].id : "");
+  if (currentProvider) {
+    providerDD.setValue(currentProvider);
+    applyProviderModels(currentProvider);
+  }
+  setModelDD.setValue(data.llm.model || "");
+
   const hint = $("settings-detected");
-  if (data.llm.detected) {
+  const count = list.length;
+  if (data.llm.provider) {
     hint.hidden = false;
-    hint.textContent = "已从 OpenCode 配置自动检测到 " + (data.llm.detected_provider || "provider") +
-      "（" + data.llm.model + "），可直接使用；也可以在上面覆盖。";
+    hint.textContent = "当前使用 Provider：" + data.llm.provider + "（endpoint/key 自动解析，无需手填）；" +
+      "共检测到 " + count + " 个可用 Provider。";
+  } else if (data.llm.detected) {
+    hint.hidden = false;
+    hint.textContent = "已自动检测到 " + count + " 个 Provider，默认 " +
+      (data.llm.detected_provider || "") + "；选择后保存即可。";
   } else {
     hint.hidden = true;
   }
-  $("set-endpoint").value = data.llm.endpoint || "";
-  $("set-model").value = data.llm.model || "";
+  $("set-endpoint").value = "";
   $("set-timeout").value = data.llm.timeout || 30;
   $("set-key").value = "";
   $("set-key").placeholder = data.llm.api_key_configured ? "已配置；留空保持不变" : "sk-...";
@@ -904,8 +957,9 @@ function setSettingsStatus(kind, text) {
 function settingsPayload() {
   return {
     llm: {
+      provider: providerDD.getValue(),
       endpoint: $("set-endpoint").value.trim(),
-      model: $("set-model").value.trim(),
+      model: setModelDD.getValue().trim(),
       api_key: $("set-key").value.trim(),
       timeout: parseFloat($("set-timeout").value || "30"),
     },

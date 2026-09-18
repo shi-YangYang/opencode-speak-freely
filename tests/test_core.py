@@ -68,6 +68,27 @@ class TestDetector(unittest.TestCase):
         self.assertTrue(self.detector.detect("I'm not able to help with that."))
         self.assertTrue(self.detector.detect("这个我帮不了。"))
 
+    def test_long_analysis_message_not_flagged(self):
+        # 长消息中后部引用拒绝短语 -> 不算拒绝
+        text = "本次测试的结论如下：" + "证据与说明。" * 80 + "模型说“我不做这个”，所以失败了。"
+        self.assertFalse(self.detector.detect(text))
+
+    def test_quoted_refusal_phrase_not_flagged(self):
+        self.assertFalse(self.detector.detect('模型回复:"我不做这个"，属于内容级拒绝。'))
+        self.assertFalse(self.detector.detect("刚才的回复 `我不能帮助` 是误报。"))
+
+    def test_strict_mode_precision(self):
+        # 真拒绝：短、开头命中
+        self.assertTrue(self.detector.detect_strict("抱歉，我不能帮你写这个脚本。"))
+        # 汇报/引用：长文或中后部命中 -> 严格模式不判
+        self.assertFalse(self.detector.detect_strict("本次结论：" + "证据。" * 60 + "模型说“我不做这个”。"))
+        self.assertFalse(self.detector.detect_strict('模型回复:"我不做这个"，属于内容级拒绝。'))
+
+    def test_short_refusal_still_flagged(self):
+        self.assertTrue(self.detector.detect("我不能帮你写这个脚本。"))
+        text = "先说明原因：这个请求涉及未授权滥用。" + "补充说明。" * 3 + "我拒绝提供这类帮助。"
+        self.assertTrue(self.detector.detect(text))
+
     def test_mid_text_soft_refusal(self):
         # 实测：拒绝语出现在句子中后部（"我也不会为…编写…"）
         text = (

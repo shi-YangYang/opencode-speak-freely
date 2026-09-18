@@ -379,6 +379,15 @@ class TestApi(WebCase):
         # 临时 HOME 下写一份 OpenCode 配置，应被自动检测
         opencode_dir = os.path.join(self.temp_home, ".config", "opencode")
         os.makedirs(opencode_dir, exist_ok=True)
+        # auth.json + models 目录：模拟登录型 provider
+        auth_dir = os.path.join(self.temp_home, ".local", "share", "opencode")
+        os.makedirs(auth_dir, exist_ok=True)
+        with open(os.path.join(auth_dir, "auth.json"), "w", encoding="utf-8") as stream:
+            stream.write('{"opencode-go": {"type": "api", "key": "sk-zen"}}')
+        cache_dir = os.path.join(self.temp_home, ".cache", "opencode")
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(os.path.join(cache_dir, "models.json"), "w", encoding="utf-8") as stream:
+            stream.write('{"opencode-go": {"api": "https://opencode.ai/zen/go/v1", "models": {"deepseek-v4.1-flash": {}, "glm-5.2": {}}}}')
         with open(os.path.join(opencode_dir, "opencode.jsonc"), "w", encoding="utf-8") as stream:
             stream.write("""
             {
@@ -399,10 +408,27 @@ class TestApi(WebCase):
         self.assertEqual(detected["model"], "glm-5.2")
         self.assertEqual(detected["endpoint"], "https://example.test/v1")
 
+        entries = {item["provider"]: item for item in opencode_llm.detect_all()}
+        self.assertIn("tokenrhythm", entries)
+        self.assertIn("opencode-go", entries)
+        self.assertEqual(entries["opencode-go"]["endpoint"], "https://opencode.ai/zen/go/v1")
+
         _, data = self.get("/api/settings")
         self.assertTrue(data["llm"]["detected"])
         self.assertEqual(data["llm"]["model"], "glm-5.2")
         self.assertTrue(data["llm"]["api_key_configured"])
+        self.assertEqual(len(data["providers"]), 2)
+
+        # 选择 provider 后，endpoint/key 由运行时的 provider 解析提供
+        _, saved = self.post("/api/settings", {
+            "llm": {"provider": "opencode-go", "model": "deepseek-v4.1-flash"},
+            "planner_enabled": True, "judge_enabled": False, "prefill_mode": "template",
+        })
+        self.assertEqual(saved["llm"]["provider"], "opencode-go")
+        from speakfreely import config as config_module
+        effective = config_module.llm_settings(config_module.load_config())
+        self.assertEqual(effective["endpoint"], "https://opencode.ai/zen/go/v1")
+        self.assertEqual(effective["api_key"], "sk-zen")
 
     def test_load_config_does_not_mutate_defaults(self):
         from speakfreely import config as config_module
@@ -418,6 +444,35 @@ class TestApi(WebCase):
         })
         self.assertFalse(result["ok"])
         self.assertTrue(result["error"])
+
+    def test_backup_delete(self):
+        self.post("/api/clean", {"session": "ses_test"})       # 生成一个备份
+        _, backups = self.get("/api/backups")
+        self.assertEqual(len(backups), 1)
+        path = backups[0]["path"]
+
+        _, result = self.post("/api/backups/delete", {"backup": path})
+        self.assertTrue(result["ok"])
+        self.assertFalse(os.path.exists(path))
+
+        _, backups = self.get("/api/backups")
+        self.assertEqual(backups, [])
+
+    def test_backup_delete_rejects_other_files(self):
+        outsider = os.path.join(self.temp_home, "important.bak")
+        with open(outsider, "w", encoding="utf-8") as stream:
+            stream.write("keep me")
+
+        request = urllib.request.Request(
+            self.base + "/api/backups/delete",
+            data=json.dumps({"backup": outsider}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(request, timeout=10)
+        self.assertEqual(ctx.exception.code, 500)
+        self.assertTrue(os.path.exists(outsider))              # 未被删除
 
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
@@ -444,8 +499,9 @@ class TestFrontend(unittest.TestCase):
 
     def test_required_ids_present(self):
         html = open(self.HTML, encoding="utf-8").read()
-        for token in ("view-run", "view-clean", "btn-scan", "clean-list",
-                      "clean-backups", "clean-log", "btn-clean-preview"):
+        for token in ("view-run", "view-clean", "view-settings", "btn-scan", "clean-list",
+                      "clean-backups", "clean-log", "btn-clean-preview", "btn-select-all",
+                      "btn-watch", "dd-provider"):
             self.assertIn(token, html, token)
 
     def test_hidden_main_actually_hides(self):
