@@ -1,2 +1,6 @@
 .DS_Store
 *.bak
+
+# 运行产物（seed/auto 生成）
+tools/
+evidence/
