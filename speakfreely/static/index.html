@@ -727,8 +727,7 @@ async function loadBackups() {
         try {
           await api("/api/restore", { method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ backup: btn.dataset.path }) });
-          $("clean-log").textContent = "已从备份恢复:
-" + btn.dataset.path;
+          $("clean-log").textContent = "已从备份恢复: " + btn.dataset.path;
         } catch (e) { $("clean-log").textContent = "恢复失败: " + e.message; }
       }));
   } catch (e) { $("clean-backups").innerHTML = '<div class="muted">备份读取失败</div>'; }

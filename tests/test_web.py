@@ -338,5 +338,42 @@ class TestApi(WebCase):
         self.assertEqual(ctx.exception.code, 404)
 
 
+class TestFrontend(unittest.TestCase):
+    """内联 JS 语法与关键结构检查（有 node 时才跑语法检查）。"""
+
+    HTML = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "speakfreely", "static", "index.html",
+    )
+
+    def test_required_ids_present(self):
+        html = open(self.HTML, encoding="utf-8").read()
+        for token in ("view-run", "view-clean", "btn-scan", "clean-list",
+                      "clean-backups", "clean-log", "btn-clean-preview"):
+            self.assertIn(token, html, token)
+
+    def test_inline_js_syntax(self):
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 不可用，跳过 JS 语法检查")
+
+        html = open(self.HTML, encoding="utf-8").read()
+        scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+        self.assertTrue(scripts)
+        handle, path = tempfile.mkstemp(suffix=".js")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(scripts[-1])
+            proc = subprocess.run([node, "--check", path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        finally:
+            os.remove(path)
+
+
 if __name__ == "__main__":
     unittest.main()
