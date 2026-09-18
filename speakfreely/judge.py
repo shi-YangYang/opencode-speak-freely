@@ -86,7 +86,7 @@ class LLMJudge:
                 api_key=self.api_key,
                 model=self.model,
                 timeout=self.timeout,
-                max_tokens=8,
+                max_tokens=600,
             )
         except Exception:  # noqa: BLE001 - 裁判失败不应影响主流程
             return None

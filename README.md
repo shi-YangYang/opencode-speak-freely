@@ -150,7 +150,9 @@ cd opencode-speak-freely
 
 - `planner`：把需求交给模型规划半成品位置与步骤（失败自动回退默认模板）
 - `judge`：关键词/正则漏检时用 LLM 兜底判定"是不是拒绝"，漏检样本记到 `~/.config/speakfreely/misses.jsonl`
-- `prefill`：被拒时的替换文案由 LLM 结合上下文生成"答案开头"，失败自动回退模板
+- `prefill`（推荐开启）：被拒时的替换文案由 LLM 结合上下文生成"开工语/答案开头"，
+  实测能把拒绝替换成可直接执行的续写；失败自动回退模板。研究依据：assistant 轮
+  prefill / Sockpuppeting（arXiv:2601.13359）——续写发生在回复侧，接受语是关键
 
 ## 分层策略
 

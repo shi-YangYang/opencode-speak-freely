@@ -128,7 +128,7 @@ class ScaffoldPlanner:
                 api_key=self.api_key,
                 model=self.model,
                 timeout=self.timeout,
-                max_tokens=500,
+                max_tokens=3000,
                 temperature=0.2,
             )
         except Exception:  # noqa: BLE001 - 规划失败必须不影响主流程

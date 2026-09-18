@@ -62,7 +62,7 @@ class PrefillGenerator:
                 api_key=self.api_key,
                 model=self.model,
                 timeout=self.timeout,
-                max_tokens=200,
+                max_tokens=1200,
                 temperature=0.4,
             )
         except Exception:  # noqa: BLE001 - 生成失败必须不影响清理流程

@@ -219,14 +219,20 @@ def _models_from_config(path: Optional[str] = None) -> List[str]:
 
 
 def get_settings() -> Dict[str, Any]:
+    from . import opencode_llm
+
     cfg = config_module.load_config()
-    llm = cfg.get("llm") or {}
+    configured = cfg.get("llm") or {}
+    detected = opencode_llm.detect() or {}
+    effective = config_module.llm_settings(cfg)
     return {
         "llm": {
-            "endpoint": llm.get("endpoint") or "",
-            "model": llm.get("model") or "",
-            "timeout": llm.get("timeout") or 30,
-            "api_key_configured": bool(llm.get("api_key")),
+            "endpoint": effective.get("endpoint") or "",
+            "model": effective.get("model") or "",
+            "timeout": configured.get("timeout") or 30,
+            "api_key_configured": bool(effective.get("api_key")),
+            "detected": bool(detected) and not configured.get("endpoint"),
+            "detected_provider": detected.get("provider") or "",
         },
         "planner_enabled": bool((cfg.get("planner") or {}).get("enabled")),
         "judge_enabled": bool((cfg.get("judge") or {}).get("enabled")),

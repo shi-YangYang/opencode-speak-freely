@@ -375,6 +375,43 @@ class TestApi(WebCase):
         raw = json.loads(open(config_path, encoding="utf-8").read())
         self.assertEqual(raw["llm"]["api_key"], "sk-abc")
 
+    def test_settings_detects_opencode_config(self):
+        # 临时 HOME 下写一份 OpenCode 配置，应被自动检测
+        opencode_dir = os.path.join(self.temp_home, ".config", "opencode")
+        os.makedirs(opencode_dir, exist_ok=True)
+        with open(os.path.join(opencode_dir, "opencode.jsonc"), "w", encoding="utf-8") as stream:
+            stream.write("""
+            {
+              // 默认模型
+              "model": "tokenrhythm/glm-5.2",
+              "provider": {
+                "tokenrhythm": {
+                  "options": { "baseURL": "https://example.test/v1", "apiKey": "sk-test" },
+                  "models": { "glm-5.2": {} },
+                },
+              },
+            }
+            """)
+
+        from speakfreely import opencode_llm
+
+        detected = opencode_llm.detect()
+        self.assertEqual(detected["model"], "glm-5.2")
+        self.assertEqual(detected["endpoint"], "https://example.test/v1")
+
+        _, data = self.get("/api/settings")
+        self.assertTrue(data["llm"]["detected"])
+        self.assertEqual(data["llm"]["model"], "glm-5.2")
+        self.assertTrue(data["llm"]["api_key_configured"])
+
+    def test_load_config_does_not_mutate_defaults(self):
+        from speakfreely import config as config_module
+
+        first = config_module.load_config()
+        first.setdefault("llm", {})["endpoint"] = "http://leak.test/v1"
+        second = config_module.load_config()
+        self.assertNotEqual(second["llm"]["endpoint"], "http://leak.test/v1")
+
     def test_settings_test_connection_failure(self):
         _, result = self.post("/api/settings/test", {
             "endpoint": "http://127.0.0.1:9/v1", "model": "mock",
