@@ -220,3 +220,7 @@ def list_backups(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def restore_backup(backup_path: str, db_path: Optional[str] = None) -> None:
     OpenCodeDBAdapter(db_path or DEFAULT_OPENCODE_DB).restore_database(backup_path)
+
+
+def delete_backup(backup_path: str, db_path: Optional[str] = None) -> None:
+    OpenCodeDBAdapter(db_path or DEFAULT_OPENCODE_DB).delete_backup(backup_path)

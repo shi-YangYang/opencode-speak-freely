@@ -378,7 +378,7 @@ def session_preview(session_id: str, db_path: Optional[str] = None, limit: int =
         text = _message_text(message, strategy)
         if not text.strip():
             continue  # 工具调用/推理/步骤等无文本消息不展示
-        is_refusal = role == "assistant" and detector.detect(text)
+        is_refusal = role == "assistant" and detector.detect_strict(text)
         if is_refusal:
             refusals += 1
         preview.append({"index": index, "role": role, "text": text[:1500], "refusal": is_refusal})
@@ -403,7 +403,7 @@ def session_refusals(session_id: str, db_path: Optional[str] = None) -> Dict[str
         if message.get("type") != "assistant":
             continue
         text = _message_text(message, strategy)
-        if text and detector.detect(text):
+        if text and detector.detect_strict(text):
             refusals.append(
                 {
                     "index": index,
@@ -781,6 +781,14 @@ class Handler(BaseHTTPRequestHandler):
                     prefill=(body.get("prefill") or "").strip() or None,
                 )
                 return self._json(result)
+            if parsed.path == "/api/backups/delete":
+                from . import cleaner as cleaner_module
+
+                backup = (body.get("backup") or "").strip()
+                if not backup:
+                    return self._error("缺少 backup 路径")
+                cleaner_module.delete_backup(backup, db_path=self.db_path)
+                return self._json({"ok": True, "deleted": backup})
             if parsed.path == "/api/restore":
                 from . import cleaner as cleaner_module
 

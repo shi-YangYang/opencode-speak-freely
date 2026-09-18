@@ -10,9 +10,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from . import jsonc
+
+_FILE_CACHE: Dict[str, Dict[str, Any]] = {}
+_FILE_TTL = 10.0
+_DETECT_CACHE: Dict[str, Any] = {"time": 0.0, "entries": []}
 
 CONFIG_CANDIDATES = (
     "~/.config/opencode/opencode.jsonc",
@@ -27,12 +32,29 @@ def _load_json(path: str) -> Optional[Dict[str, Any]]:
     if not os.path.exists(target):
         return None
     try:
+        mtime = os.path.getmtime(target)
+    except OSError:
+        return None
+
+    cached = _FILE_CACHE.get(target)
+    if cached and cached["mtime"] == mtime and time.time() - cached["time"] < _FILE_TTL:
+        return cached["data"]
+
+    try:
         with open(target, "r", encoding="utf-8") as stream:
             raw = stream.read()
     except OSError:
         return None
-    data = jsonc.parse(raw)
-    return data if isinstance(data, dict) else None
+
+    # 大文件（models.json）走标准 JSON 快速路径，带注释的配置再回退 JSONC 解析
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = jsonc.parse(raw)
+
+    result = data if isinstance(data, dict) else None
+    _FILE_CACHE[target] = {"mtime": mtime, "time": time.time(), "data": result}
+    return result
 
 
 def _load_config() -> Optional[Dict[str, Any]]:
@@ -43,8 +65,11 @@ def _load_config() -> Optional[Dict[str, Any]]:
     return None
 
 
-def detect_all() -> List[Dict[str, Any]]:
+def detect_all(use_cache: bool = True) -> List[Dict[str, Any]]:
     """列出所有可用 provider：{provider, endpoint, api_key, models, source}。"""
+    if use_cache and _DETECT_CACHE["entries"] and time.time() - _DETECT_CACHE["time"] < _FILE_TTL:
+        return _DETECT_CACHE["entries"]
+
     providers: Dict[str, Dict[str, Any]] = {}
 
     config = _load_config() or {}
@@ -85,7 +110,10 @@ def detect_all() -> List[Dict[str, Any]]:
             "source": "auth",
         }
 
-    return sorted(providers.values(), key=lambda item: -len(item["models"]))
+    entries = sorted(providers.values(), key=lambda item: -len(item["models"]))
+    _DETECT_CACHE["time"] = time.time()
+    _DETECT_CACHE["entries"] = entries
+    return entries
 
 
 def resolve(provider_id: str) -> Optional[Dict[str, Any]]:

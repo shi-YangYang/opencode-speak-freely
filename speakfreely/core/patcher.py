@@ -60,7 +60,7 @@ def clean_messages(
             continue
 
         content = strategy.extract_text_content(msg)
-        if not content or not detector.detect(content):
+        if not content or not detector.detect_strict(content):
             continue
 
         detail = ChangeDetail(
