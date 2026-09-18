@@ -346,6 +346,42 @@ class TestApi(WebCase):
         _, data = self.get("/api/session?id=ses_test")
         self.assertEqual(data["refusals"], 1)  # 原文回来了
 
+    def test_settings_defaults_and_save(self):
+        _, data = self.get("/api/settings")
+        self.assertFalse(data["llm"]["api_key_configured"])
+        self.assertFalse(data["planner_enabled"])
+
+        _, saved = self.post("/api/settings", {
+            "llm": {"endpoint": "http://127.0.0.1:9/v1", "model": "mock", "api_key": "sk-abc", "timeout": 12},
+            "planner_enabled": True,
+            "judge_enabled": True,
+            "prefill_mode": "auto",
+        })
+        self.assertTrue(saved["llm"]["api_key_configured"])
+        self.assertTrue(saved["planner_enabled"])
+        self.assertEqual(saved["prefill_mode"], "auto")
+
+        # 空密钥 = 保留原密钥
+        _, again = self.post("/api/settings", {
+            "llm": {"endpoint": "http://127.0.0.1:9/v1", "model": "mock2", "api_key": ""},
+            "planner_enabled": False,
+            "judge_enabled": False,
+            "prefill_mode": "template",
+        })
+        self.assertTrue(again["llm"]["api_key_configured"])
+        self.assertEqual(again["llm"]["model"], "mock2")
+
+        config_path = os.path.join(self.temp_home, ".config", "speakfreely", "config.json")
+        raw = json.loads(open(config_path, encoding="utf-8").read())
+        self.assertEqual(raw["llm"]["api_key"], "sk-abc")
+
+    def test_settings_test_connection_failure(self):
+        _, result = self.post("/api/settings/test", {
+            "endpoint": "http://127.0.0.1:9/v1", "model": "mock",
+        })
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["error"])
+
     def test_stages_endpoint(self):
         _, stages = self.get("/api/stages")
         self.assertEqual(

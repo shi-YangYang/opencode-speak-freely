@@ -100,17 +100,20 @@ class LLMJudge:
 
 
 def from_config(config: Dict[str, Any]) -> Optional[LLMJudge]:
-    """按配置构造；未启用或配置不完整时返回 None。"""
+    """按配置构造；未启用或配置不完整时返回 None（endpoint/model 回退到共享 llm 段）。"""
+    from . import config as config_module
+
     section = config.get("judge") or {}
     if not section.get("enabled"):
         return None
-    endpoint = section.get("endpoint") or ""
-    model = section.get("model") or ""
+    options = config_module.llm_settings(config, section)
+    endpoint = options.get("endpoint") or ""
+    model = options.get("model") or ""
     if not endpoint or not model:
         return None
     return LLMJudge(
         endpoint=endpoint,
         model=model,
-        api_key=section.get("api_key") or None,
-        timeout=float(section.get("timeout") or 20),
+        api_key=options.get("api_key") or None,
+        timeout=float(options.get("timeout") or 20),
     )

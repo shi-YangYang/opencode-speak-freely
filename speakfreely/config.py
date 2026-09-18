@@ -9,6 +9,12 @@ from .core.constants import DEFAULT_REPLACEMENT
 from .core.file_ops import atomic_write_json
 
 DEFAULTS: Dict[str, Any] = {
+    "llm": {
+        "endpoint": "",
+        "api_key": "",
+        "model": "",
+        "timeout": 30,
+    },
     "replacement": DEFAULT_REPLACEMENT,
     "keywords": {},
     "clean_reasoning": False,
@@ -68,6 +74,16 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
             section.update(value)
             merged[key] = section
         else:
+            merged[key] = value
+    return merged
+
+
+def llm_settings(config: Dict[str, Any], section: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """共享 LLM 配置 + 功能段的覆盖值。"""
+    merged = dict(config.get("llm") or {})
+    for key in ("endpoint", "api_key", "model", "timeout"):
+        value = (section or {}).get(key)
+        if value:
             merged[key] = value
     return merged
 

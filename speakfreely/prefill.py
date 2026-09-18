@@ -76,17 +76,20 @@ class PrefillGenerator:
 
 def from_config(config: Dict[str, Any], mode: Optional[str] = None) -> Optional[PrefillGenerator]:
     """按配置构造；mode 可覆盖配置。非 auto 或配置不完整时返回 None。"""
+    from . import config as config_module
+
     section = config.get("prefill") or {}
     effective = mode or section.get("mode") or "template"
     if effective != "auto":
         return None
-    endpoint = section.get("endpoint") or ""
-    model = section.get("model") or ""
+    options = config_module.llm_settings(config, section)
+    endpoint = options.get("endpoint") or ""
+    model = options.get("model") or ""
     if not endpoint or not model:
         return None
     return PrefillGenerator(
         endpoint=endpoint,
         model=model,
-        api_key=section.get("api_key") or None,
-        timeout=float(section.get("timeout") or 30),
+        api_key=options.get("api_key") or None,
+        timeout=float(options.get("timeout") or 30),
     )

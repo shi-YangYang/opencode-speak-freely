@@ -164,6 +164,7 @@
 <nav class="tabs">
   <button class="tab active" data-view="run">运行</button>
   <button class="tab" data-view="clean">清理拒绝</button>
+  <button class="tab" data-view="settings">设置</button>
 </nav>
 
 <main id="view-run">
@@ -303,6 +304,44 @@
 
     <label>结果</label>
     <div id="clean-log" class="log-small">—</div>
+  </section>
+</main>
+
+<main id="view-settings" hidden>
+  <section class="panel left" style="grid-column: 1 / -1; max-width: 720px; margin: 0 auto; width: 100%">
+    <label>LLM 配置（用于自动规划 / 裁判 / 生成替换文案，支持 OpenAI 兼容接口）</label>
+    <div class="row" style="margin-top:0">
+      <label style="margin:0">API Endpoint
+        <input id="set-endpoint" placeholder="https://.../v1" />
+      </label>
+    </div>
+    <div class="row">
+      <label style="margin:0">API Key
+        <input id="set-key" placeholder="留空 = 保持已配置的密钥" />
+      </label>
+    </div>
+    <div class="row">
+      <label style="margin:0">模型名称
+        <input id="set-model" placeholder="如 gpt-4o-mini / glm-5.2" />
+      </label>
+      <label style="margin:0">超时（秒）
+        <input id="set-timeout" type="number" min="5" max="300" />
+      </label>
+    </div>
+
+    <label>功能开关</label>
+    <div class="checks">
+      <label style="cursor:pointer" data-tip="让 LLM 根据项目与需求决定半成品文件位置与步骤"><input type="checkbox" id="set-planner"> 自动规划（planner）</label>
+      <label style="cursor:pointer" data-tip="关键词漏检时用 LLM 兜底判断是否拒绝"><input type="checkbox" id="set-judge"> 拒绝裁判（judge）</label>
+      <label style="cursor:pointer" data-tip="被拒时的替换文案由 LLM 生成（关闭则用模板）"><input type="checkbox" id="set-prefill"> LLM 替换文案（prefill）</label>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="btn-settings-save">保存</button>
+      <button id="btn-settings-test">测试连接</button>
+    </div>
+    <div id="settings-status" class="status-banner" hidden></div>
+    <div class="muted" style="margin-top:10px">配置保存在 <code>~/.config/speakfreely/config.json</code>，密钥不会回显。</div>
   </section>
 </main>
 
@@ -670,9 +709,13 @@ $("btn-clean-run").addEventListener("click", () => runClean(false));
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
-    $("view-run").hidden = tab.dataset.view !== "run";
-    $("view-clean").hidden = tab.dataset.view !== "clean";
+    const view = tab.dataset.view;
+    ["run", "clean", "settings"].forEach((name) => {
+      const node = document.getElementById("view-" + name);
+      if (node) node.hidden = name !== view;
+    });
     if (tab.dataset.view === "clean") { loadCleanProjects(); loadBackups(); }
+    if (tab.dataset.view === "settings") { loadSettings(); }
   });
 });
 
@@ -826,6 +869,71 @@ async function runClean(dryRun) {
     previewBtn.disabled = runBtn.disabled = false;
   }
 }
+
+/* ── 设置页 ─────────────────────────────────────────────────────────── */
+async function loadSettings() {
+  const data = await api("/api/settings");
+  $("set-endpoint").value = data.llm.endpoint || "";
+  $("set-model").value = data.llm.model || "";
+  $("set-timeout").value = data.llm.timeout || 30;
+  $("set-key").value = "";
+  $("set-key").placeholder = data.llm.api_key_configured ? "已配置；留空保持不变" : "sk-...";
+  $("set-planner").checked = !!data.planner_enabled;
+  $("set-judge").checked = !!data.judge_enabled;
+  $("set-prefill").checked = data.prefill_mode === "auto";
+}
+
+function setSettingsStatus(kind, text) {
+  const el = $("settings-status");
+  el.className = "status-banner " + kind;
+  el.textContent = text;
+  el.hidden = !text;
+}
+
+function settingsPayload() {
+  return {
+    llm: {
+      endpoint: $("set-endpoint").value.trim(),
+      model: $("set-model").value.trim(),
+      api_key: $("set-key").value.trim(),
+      timeout: parseFloat($("set-timeout").value || "30"),
+    },
+    planner_enabled: $("set-planner").checked,
+    judge_enabled: $("set-judge").checked,
+    prefill_mode: $("set-prefill").checked ? "auto" : "template",
+  };
+}
+
+async function saveSettings() {
+  setSettingsStatus("busy", "保存中…");
+  try {
+    await api("/api/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settingsPayload()),
+    });
+    setSettingsStatus("ok", "已保存");
+    await loadSettings();
+  } catch (e) {
+    setSettingsStatus("err", "保存失败: " + e.message);
+  }
+}
+
+async function testSettings() {
+  setSettingsStatus("busy", "测试连接中…");
+  try {
+    const result = await api("/api/settings/test", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settingsPayload().llm),
+    });
+    if (result.ok) setSettingsStatus("ok", "连接成功，模型回复: " + (result.reply || "(空)"));
+    else setSettingsStatus("err", "连接失败: " + result.error);
+  } catch (e) {
+    setSettingsStatus("err", "测试失败: " + e.message);
+  }
+}
+
+$("btn-settings-save").addEventListener("click", saveSettings);
+$("btn-settings-test").addEventListener("click", testSettings);
 
 (async function init() {
   await loadStatus();

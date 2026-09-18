@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import auto as auto_module
 from . import cleaner as cleaner_module
+from . import config as config_module
 from . import installer
 from . import paths
 from . import seed as seed_module
@@ -215,6 +216,71 @@ def _models_from_config(path: Optional[str] = None) -> List[str]:
         if models:
             return sorted(set(models))
     return []
+
+
+def get_settings() -> Dict[str, Any]:
+    cfg = config_module.load_config()
+    llm = cfg.get("llm") or {}
+    return {
+        "llm": {
+            "endpoint": llm.get("endpoint") or "",
+            "model": llm.get("model") or "",
+            "timeout": llm.get("timeout") or 30,
+            "api_key_configured": bool(llm.get("api_key")),
+        },
+        "planner_enabled": bool((cfg.get("planner") or {}).get("enabled")),
+        "judge_enabled": bool((cfg.get("judge") or {}).get("enabled")),
+        "prefill_mode": (cfg.get("prefill") or {}).get("mode") or "template",
+    }
+
+
+def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    cfg = config_module.load_config()
+    incoming = payload.get("llm") or {}
+    llm = cfg.setdefault("llm", {})
+
+    for key in ("endpoint", "model"):
+        if key in incoming:
+            llm[key] = str(incoming[key]).strip()
+    if incoming.get("api_key"):
+        llm["api_key"] = str(incoming["api_key"]).strip()
+    if incoming.get("timeout"):
+        try:
+            llm["timeout"] = float(incoming["timeout"])
+        except (TypeError, ValueError):
+            pass
+
+    cfg.setdefault("planner", {})["enabled"] = bool(payload.get("planner_enabled"))
+    cfg.setdefault("judge", {})["enabled"] = bool(payload.get("judge_enabled"))
+    mode = payload.get("prefill_mode") or "template"
+    cfg.setdefault("prefill", {})["mode"] = mode if mode in ("template", "auto") else "template"
+
+    config_module.save_config(cfg)
+    return get_settings()
+
+
+def test_llm(payload: Dict[str, Any]) -> Dict[str, Any]:
+    from . import llm as llm_module
+
+    cfg = config_module.load_config()
+    saved = cfg.get("llm") or {}
+    endpoint = (payload.get("endpoint") or saved.get("endpoint") or "").strip()
+    model = (payload.get("model") or saved.get("model") or "").strip()
+    api_key = (payload.get("api_key") or saved.get("api_key") or "").strip()
+    if not endpoint or not model:
+        return {"ok": False, "error": "请先填写 endpoint 与 model"}
+    try:
+        reply = llm_module.chat(
+            [{"role": "user", "content": "ping"}],
+            endpoint=endpoint,
+            api_key=api_key or None,
+            model=model,
+            timeout=15,
+            max_tokens=8,
+        )
+        return {"ok": True, "reply": (reply or "")[:60]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
 
 
 def list_stages() -> List[Dict[str, str]]:
@@ -635,6 +701,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(list_models())
             if parsed.path == "/api/stages":
                 return self._json(list_stages())
+            if parsed.path == "/api/settings":
+                return self._json(get_settings())
             if parsed.path == "/api/session":
                 session_id = (query.get("id") or [""])[0]
                 if not session_id:
@@ -676,6 +744,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         body = self._read_json()
         try:
+            if parsed.path == "/api/settings":
+                return self._json(save_settings(body))
+            if parsed.path == "/api/settings/test":
+                return self._json(test_llm(body))
             if parsed.path == "/api/run":
                 with _WRITE_LOCK:
                     job_id = start_run(body, self.db_path)

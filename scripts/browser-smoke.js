@@ -102,10 +102,18 @@ function getJson(path) {
     await sleep(3000);
 
     check("页面标题", (await evaluate("document.title")) === "speakfreely");
-    check("两个页签", (await evaluate("document.querySelectorAll('.tab').length")) === 2);
+    check("三个页签", (await evaluate("document.querySelectorAll('.tab').length")) === 3);
 
     await evaluate("document.querySelector('.tab[data-view=clean]').click()");
     await sleep(400);
+    await evaluate("document.querySelector('.tab[data-view=settings]').click()");
+    await sleep(400);
+    check("切换到设置页",
+      (await evaluate("getComputedStyle(document.getElementById('view-settings')).display")) !== "none" &&
+      (await evaluate("getComputedStyle(document.getElementById('view-clean')).display")) === "none");
+    await evaluate("document.querySelector('.tab[data-view=clean]').click()");
+    await sleep(400);
+
     check(
       "切换到清理拒绝页",
       (await evaluate("getComputedStyle(document.getElementById('view-run')).display")) === "none" &&
