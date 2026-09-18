@@ -209,6 +209,7 @@
       <label style="cursor:pointer"><input type="checkbox" id="dry-run"> 只预览计划</label>
       <label style="cursor:pointer" data-tip="已有会话模式：被拒时自动把拒绝替换成继续文案并重试"><input type="checkbox" id="auto-clean" checked> 被拒自动清理</label>
       <label style="cursor:pointer" data-tip="已有会话模式：把目标写进半成品文件，实际发送「补全 TODO」而不是原始请求（同新建会话的 seed 机制）"><input type="checkbox" id="use-seed" checked> 代码上下文模式</label>
+      <label style="cursor:pointer" data-tip="让 LLM 根据项目和需求自动决定：从哪个文件开始、用什么语言、哪些步骤（需在设置里配置 planner；填写了「生成位置」时以位置为准）"><input type="checkbox" id="seed-plan" checked> 自动规划</label>
     </div>
 
     <div class="row">
@@ -597,6 +598,7 @@ async function run(dryRun) {
     auto_clean: $("auto-clean").checked,
     seed: $("use-seed").checked,
     seed_path: $("seed-path").value.trim(),
+    seed_plan: $("seed-plan").checked && !$("seed-path").value.trim(),
     dry_run: !!dryRun,
   };
   log(`\n=== 启动任务（${payload.mode === "send" ? "发送到会话" : "新会话全流程"}）===`);

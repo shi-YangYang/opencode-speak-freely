@@ -19,6 +19,13 @@ DEFAULTS: Dict[str, Any] = {
         "model": "",
         "timeout": 20,
     },
+    "planner": {
+        "enabled": False,
+        "endpoint": "",
+        "api_key": "",
+        "model": "",
+        "timeout": 30,
+    },
     "prefill": {
         "mode": "template",  # template | auto
         "endpoint": "",

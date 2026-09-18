@@ -139,11 +139,13 @@ cd opencode-speak-freely
 ```json
 {
   "replacement": "继续。把下一步拆成可执行的操作，并说明每步的预期结果：",
+  "planner": { "enabled": true, "endpoint": "https://.../v1", "api_key": "sk-...", "model": "<便宜模型>" },
   "judge":   { "enabled": true, "endpoint": "https://.../v1", "api_key": "sk-...", "model": "<便宜模型>" },
   "prefill": { "mode": "auto",  "endpoint": "https://.../v1", "api_key": "sk-...", "model": "<便宜模型>" }
 }
 ```
 
+- `planner`：把需求交给模型规划半成品位置与步骤（失败自动回退默认模板）
 - `judge`：关键词/正则漏检时用 LLM 兜底判定"是不是拒绝"，漏检样本记到 `~/.config/speakfreely/misses.jsonl`
 - `prefill`：被拒时的替换文案由 LLM 结合上下文生成"答案开头"，失败自动回退模板
 

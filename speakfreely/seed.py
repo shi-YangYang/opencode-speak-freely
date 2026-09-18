@@ -317,6 +317,62 @@ def _stub_block(goal: str, extension: str, function_name: str) -> str:
     ).format(syntax=opener, marker=MARKER, goal=goal)
 
 
+def render_from_plan(plan: Dict[str, Any], goal: str) -> str:
+    """按 LLM 规划生成半成品内容（步骤清单 + 函数桩）。"""
+    extension = os.path.splitext(plan["path"])[1].lower()
+    steps = plan.get("steps") or []
+    functions = plan.get("functions") or []
+    opener, closer = COMMENT_SYNTAX.get(extension, ("#", "#"))
+
+    if extension == ".md":
+        lines = ["# {}".format(goal), "", "<!-- {} -->".format(MARKER), "", "Work in progress. Steps:"]
+        for index, step in enumerate(steps, 1):
+            lines.append("  {}. {}  [{}]".format(index, step, "TODO" if index > 1 else "DONE"))
+        if functions:
+            lines += ["", "Components:", "  - " + "\n  - ".join(functions)]
+        return "\n".join(lines) + "\n"
+
+    if extension == ".py":
+        lines = [
+            "# -*- coding: utf-8 -*-",
+            "# {}".format(MARKER),
+            '"""{}'.format(goal),
+            "",
+            "Work in progress. Steps:",
+        ]
+        for index, step in enumerate(steps, 1):
+            lines.append("  {}. {}  [{}]".format(index, step, "DONE" if index == 1 else "TODO"))
+        lines += ['"""', ""]
+        for name in functions:
+            safe = _slugify(name)
+            lines += [
+                "def {}():".format(safe),
+                "    raise NotImplementedError",
+                "",
+                "",
+            ]
+        if not functions:
+            lines += ["def run(*args, **kwargs):", "    raise NotImplementedError", ""]
+        return "\n".join(lines)
+
+    # 其他语言/格式：对应注释风格的 TODO 清单 + 函数桩
+    if opener == "<!--":
+        body = "\n".join("  {}. {}".format(i, step) for i, step in enumerate(steps, 1))
+        return "{open} {marker}: {goal}\nSteps:\n{body}\n{close}\n".format(
+            open=opener, close=closer, marker=MARKER, goal=goal, body=body
+        )
+    lines = [
+        "{} ---------------------------------------------------------------------------".format(opener),
+        "{} {}: {}".format(opener, MARKER, goal),
+        "{} Work in progress. Steps:".format(opener),
+    ]
+    for index, step in enumerate(steps, 1):
+        lines.append("{}   {}. {}".format(opener, index, step))
+    for name in functions:
+        lines += ["", "function {}() {{".format(_slugify(name)), "  throw new Error('TODO');", "}"]
+    return "\n".join(lines) + "\n"
+
+
 def resolve_target(project_dir: str, path: str) -> str:
     """把用户给的路径解析为项目内的目标文件（目录则用默认文件名）。"""
     target = path if os.path.isabs(path) else os.path.join(project_dir, path)
@@ -344,17 +400,20 @@ def scaffold(
     force: bool = False,
     template: str = "harness",
     path: Optional[str] = None,
+    plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """生成半成品文件。
 
-    path 为空时默认 tools/<name>.py；指定路径时按扩展名决定写法：
-    .py 走模板，.md 写 TODO 注释，其他类型写对应注释风格的 TODO 块。
+    plan 不为空时按 LLM 规划决定文件与内容；否则：
+    path 为空时默认 tools/<name>.py；指定路径时按扩展名决定写法。
     """
     project_dir = os.path.realpath(os.path.expanduser(project_dir))
     if template not in TEMPLATES:
         raise ValueError("未知模板: {}（可选 {}）".format(template, "/".join(TEMPLATES)))
 
-    if path:
+    if plan:
+        target = resolve_target(project_dir, plan["path"])
+    elif path:
         target = resolve_target(project_dir, path)
     else:
         module = _slugify(name or DEFAULT_NAMES.get(template, template))
@@ -374,7 +433,9 @@ def scaffold(
         }
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    if extension in ("", ".py"):
+    if plan:
+        atomic_write_text(target, render_from_plan(plan, goal or "Task harness"))
+    elif extension in ("", ".py"):
         content = TEMPLATES[template].replace("{goal}", goal or "Task harness")
         head, sep, tail = content.partition("\n")
         content = "{}\n# {}\n{}".format(head, MARKER, tail) if sep else content

@@ -401,6 +401,54 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertIn("task_harness.py", prompts[0])
         self.assertIn("TODO", prompts[0])
 
+    def test_planner_parses_and_validates(self):
+        from speakfreely import planner
+
+        plan = planner.parse_response(
+            '{"path": "webui/app.py", "language": "python", '
+            '"steps": ["搭建页面骨架", "接入数据源"], "functions": ["build_app", "load_data"]}'
+        )
+        self.assertEqual(plan["path"], "webui/app.py")
+        self.assertEqual(len(plan["steps"]), 2)
+
+        self.assertIsNone(planner.parse_response('{"path": "/etc/passwd", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "../outside.py", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "a.exe", "steps": ["x"]}'))
+        self.assertIsNone(planner.parse_response('{"path": "a.py", "steps": []}'))
+        self.assertIsNone(planner.parse_response("not json"))
+
+    def test_scaffold_uses_plan(self):
+        from speakfreely import seed
+
+        plan = {
+            "path": "webui/app.py",
+            "language": "python",
+            "steps": ["搭建页面骨架", "接入数据源", "补测试"],
+            "functions": ["build_app", "load_data"],
+        }
+        result = seed.scaffold(self.temp, goal="做一个账号管理 WebUI", plan=plan)
+        self.assertTrue(result["path"].endswith(os.path.join("webui", "app.py")))
+        content = open(result["path"], encoding="utf-8").read()
+        self.assertIn("做一个账号管理 WebUI", content)
+        self.assertIn("搭建页面骨架", content)
+        self.assertIn("def build_app():", content)
+        self.assertIn("raise NotImplementedError", content)
+
+    def test_planner_with_fake_chat(self):
+        from speakfreely import planner
+
+        fake = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m",
+            chat_fn=lambda *a, **k: '{"path": "docs/plan.md", "steps": ["列现状"], "functions": []}',
+        )
+        plan = fake.plan("整理现状", self.temp)
+        self.assertEqual(plan["path"], "docs/plan.md")
+
+        failing = planner.ScaffoldPlanner(
+            endpoint="http://x", model="m", chat_fn=lambda *a, **k: "sorry"
+        )
+        self.assertIsNone(failing.plan("x", self.temp))
+
     def test_seed_templates_available(self):
         from speakfreely import seed
 
