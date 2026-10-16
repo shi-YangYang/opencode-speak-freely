@@ -18,12 +18,20 @@ class TempHomeCase(unittest.TestCase):
         self.temp_home = tempfile.mkdtemp(prefix="speakfreely-test-")
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.temp_home
+        if sys.platform == "win32":  # Windows 的 expanduser 只认 USERPROFILE，HOME 不生效
+            self.old_userprofile = os.environ.get("USERPROFILE")
+            os.environ["USERPROFILE"] = self.temp_home
 
     def tearDown(self):
         if self.old_home is None:
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = self.old_home
+        if sys.platform == "win32":
+            if self.old_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = self.old_userprofile
         shutil.rmtree(self.temp_home, ignore_errors=True)
 
 
