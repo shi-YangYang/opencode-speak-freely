@@ -164,12 +164,20 @@ class HomeIsolation:
         self._temp_home = tempfile.mkdtemp(prefix="speakfreely-home-")
         self._old_home = os.environ.get("HOME")
         os.environ["HOME"] = self._temp_home
+        if sys.platform == "win32":  # Windows 的 expanduser 只认 USERPROFILE，HOME 不生效
+            self._old_userprofile = os.environ.get("USERPROFILE")
+            os.environ["USERPROFILE"] = self._temp_home
 
     def tearDown(self):
         if self._old_home is None:
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = self._old_home
+        if sys.platform == "win32":
+            if self._old_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = self._old_userprofile
         shutil.rmtree(self._temp_home, ignore_errors=True)
         super().tearDown()
 
@@ -371,7 +379,7 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         from speakfreely import seed
 
         py = seed.scaffold(self.temp, goal="补充实现", path="src/feature.py")
-        self.assertTrue(py["path"].endswith(os.path.join("src", "feature.py")))
+        self.assertEqual(py["relative"], os.path.join("src", "feature.py"))
         self.assertIn("NotImplementedError", open(py["path"], encoding="utf-8").read())
 
         md = seed.scaffold(self.temp, goal="整理方案", template="doc", path="docs/plan.md")
@@ -427,7 +435,7 @@ class TestSeed(HomeIsolation, unittest.TestCase):
             "functions": ["build_app", "load_data"],
         }
         result = seed.scaffold(self.temp, goal="做一个账号管理 WebUI", plan=plan)
-        self.assertTrue(result["path"].endswith(os.path.join("webui", "app.py")))
+        self.assertEqual(result["relative"], os.path.join("webui", "app.py"))
         content = open(result["path"], encoding="utf-8").read()
         self.assertIn("做一个账号管理 WebUI", content)
         self.assertIn("搭建页面骨架", content)
@@ -467,7 +475,7 @@ class TestSeed(HomeIsolation, unittest.TestCase):
         self.assertIn(seed.MARKER, content)
         self.assertNotIn("NotImplementedError", content)
         self.assertIn("实施规划文档", result["prompt"])
-        self.assertIn("docs/project_plan.md", result["prompt"])
+        self.assertIn(os.path.join("docs", "project_plan.md"), result["prompt"])
 
     def test_from_config_defaults_to_local(self):
         from speakfreely import planner
@@ -580,6 +588,9 @@ class TestJudgeIntegration(unittest.TestCase):
         self.temp_home = tempfile.mkdtemp(prefix="speakfreely-judge-")
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.temp_home
+        if sys.platform == "win32":  # Windows 的 expanduser 只认 USERPROFILE，HOME 不生效
+            self.old_userprofile = os.environ.get("USERPROFILE")
+            os.environ["USERPROFILE"] = self.temp_home
         self.db_path = os.path.join(self.temp_home, "opencode.db")
         self.project = os.path.join(self.temp_home, "project")
         os.makedirs(self.project, exist_ok=True)
@@ -590,6 +601,11 @@ class TestJudgeIntegration(unittest.TestCase):
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = self.old_home
+        if sys.platform == "win32":
+            if self.old_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = self.old_userprofile
         shutil.rmtree(self.temp_home, ignore_errors=True)
 
     def _set_text(self, text):
@@ -685,6 +701,9 @@ class TestPrefillIntegration(unittest.TestCase):
         self.temp_home = tempfile.mkdtemp(prefix="speakfreely-prefill-")
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.temp_home
+        if sys.platform == "win32":  # Windows 的 expanduser 只认 USERPROFILE，HOME 不生效
+            self.old_userprofile = os.environ.get("USERPROFILE")
+            os.environ["USERPROFILE"] = self.temp_home
         self.db_path = os.path.join(self.temp_home, "opencode.db")
         self.project = os.path.join(self.temp_home, "project")
         os.makedirs(self.project, exist_ok=True)
@@ -719,6 +738,11 @@ class TestPrefillIntegration(unittest.TestCase):
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = self.old_home
+        if sys.platform == "win32":
+            if self.old_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = self.old_userprofile
         shutil.rmtree(self.temp_home, ignore_errors=True)
 
     def test_cleaner_uses_generated_prefill(self):
@@ -839,6 +863,9 @@ class TestSendToSession(unittest.TestCase):
         self.temp_home = tempfile.mkdtemp(prefix="speakfreely-send-")
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.temp_home
+        if sys.platform == "win32":  # Windows 的 expanduser 只认 USERPROFILE，HOME 不生效
+            self.old_userprofile = os.environ.get("USERPROFILE")
+            os.environ["USERPROFILE"] = self.temp_home
         self.db_path = os.path.join(self.temp_home, "opencode.db")
         self.project = os.path.join(self.temp_home, "project")
         os.makedirs(self.project, exist_ok=True)
@@ -849,6 +876,11 @@ class TestSendToSession(unittest.TestCase):
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = self.old_home
+        if sys.platform == "win32":
+            if self.old_userprofile is None:
+                os.environ.pop("USERPROFILE", None)
+            else:
+                os.environ["USERPROFILE"] = self.old_userprofile
         shutil.rmtree(self.temp_home, ignore_errors=True)
 
     def test_refusal_then_success(self):
